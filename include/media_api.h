@@ -1,0 +1,2297 @@
+#ifndef MEDIA_API_H
+#define MEDIA_API_H
+
+/*
+	本库为闭源商业软件。
+	非商业用途：可在遵守 LICENSE 前提下使用（如你提供免费）。
+	商业用途：必须购买商业授权，否则属于未经许可使用。
+	严禁逆向、破解、绕过授权、篡改或未经许可分发；违者将依法追责并主张违约金（详见 LICENSE.txt）。
+*/
+#include <stdint.h>
+#include <stddef.h>
+#include <linux/dma-buf.h>
+
+// RTSP 传输模式
+typedef enum {
+    RTSP_TRANSPORT_UDP = 0,     // 仅 UDP
+    RTSP_TRANSPORT_TCP = 1,     // 仅 TCP (interleaved mode)
+} rtsp_transport_mode_t;
+
+#define MEDIA_API_VERSION_MAJOR 0
+#define MEDIA_API_VERSION_MINOR 1
+#define MEDIA_API_VERSION_PATCH 4
+#define MEDIA_API_VERSION_STR "0.1.4"
+
+typedef int MEDIA_DEV;
+typedef int MEDIA_CHN;
+
+typedef enum {
+    MEDIA_STATUS_OK = 0,
+    MEDIA_ERR_INVALID_PARAM = -1,
+    MEDIA_ERR_MODULE_NOT_FOUND = -1001,
+    MEDIA_ERR_PORT_NOT_FOUND = -1002,
+    MEDIA_ERR_PORT_DIRECTION = -1003,
+    MEDIA_ERR_PORT_INCOMPATIBLE = -1004,
+    MEDIA_ERR_PIPELINE_STATE = -1005,
+    MEDIA_ERR_RESOURCE = -1006,
+    MEDIA_ERR_ALREADY_EXISTS = -1007,
+    MEDIA_ERR_NOT_FOUND = -1008,
+} MEDIA_STATUS;
+
+typedef struct {
+    int pool_id;
+    int index;
+} MEDIA_BUFFER;
+
+typedef enum {
+    MEDIA_BUFFER_META_NONE = 0,
+    MEDIA_BUFFER_META_VIDEO_FRAME,
+    MEDIA_BUFFER_META_AUDIO_FRAME,
+    MEDIA_BUFFER_META_AUDIO_STREAM,
+} MEDIA_BUFFER_META_TYPE;
+
+typedef struct {
+    int valid;
+    int type;
+    int media_format;
+    uint32_t len;
+    uint64_t time_stamp;
+    uint32_t seq;
+
+    union {
+        struct {
+            uint32_t width;
+            uint32_t height;
+            uint32_t drm_fourcc;
+            uint64_t drm_modifier;
+            uint32_t plane_count;
+            uint32_t strides[4];
+            uint32_t offsets[4];
+        } video;
+
+        struct {
+            int sample_rate;
+            int bit_width;
+            int snd_mode;
+            int point_num_per_frame;
+            uint32_t plane_count;
+            uint32_t plane_offsets[2];
+            uint32_t plane_lengths[2];
+        } audio_frame;
+
+        struct {
+            int codec;
+            int transport_type;
+            uint32_t plane_count;
+            uint32_t plane_offsets[1];
+            uint32_t plane_lengths[1];
+        } audio_stream;
+    } u;
+} MEDIA_BUFFER_META;
+
+typedef enum {
+    MEDIA_POOL_ALLOC_MODE_NATIVE = 1,
+    MEDIA_POOL_ALLOC_MODE_COMPAT = 2,
+    MEDIA_POOL_ALLOC_MODE_HOST = 3,
+} MEDIA_POOL_ALLOC_MODE;
+
+typedef struct {
+    void *data;
+    size_t len;
+    void *handle;
+} MEDIA_PACKET;
+
+typedef enum {
+    MEDIA_FORMAT_UNSET = 0,  // 未设置格式
+    MEDIA_FORMAT_NV12 = 1,
+    MEDIA_FORMAT_RGB888 = 2,
+    MEDIA_FORMAT_RGBA8888 = 3,
+    MEDIA_FORMAT_AFBC = 4,
+    MEDIA_FORMAT_GRAY8 = 5,  // 8 位灰度格式
+    MEDIA_FORMAT_BGR888 = 6,
+    MEDIA_FORMAT_BGRA8888 = 7,
+    MEDIA_FORMAT_YUV422SP = 8,
+    MEDIA_FORMAT_YUV422P = 9,
+    MEDIA_FORMAT_YUV420SP = 10,
+    MEDIA_FORMAT_YUV420P = 11,
+    MEDIA_FORMAT_YCrCb_420SP = 12,
+    MEDIA_FORMAT_YCrCb_422SP = 13,
+    MEDIA_FORMAT_RGB565 = 14,
+    MEDIA_FORMAT_RGBA5551 = 15,
+    MEDIA_FORMAT_RGBA4444 = 16,
+    MEDIA_FORMAT_ARGB8888 = 17,
+    MEDIA_FORMAT_ABGR8888 = 18,
+    MEDIA_FORMAT_DEPTH_F32 = 19, // float32 depth map
+    MEDIA_FORMAT_TENSOR_NHWC_F16 = 20, // packed NHWC RGB tensor, fp16 per channel
+    MEDIA_FORMAT_NV24 = 21, // Y/CbCr 4:4:4 semi-planar, HDMI RX commonly reports this
+    MEDIA_FORMAT_YUV420SP_10BIT = 22,
+    MEDIA_FORMAT_YUV422SP_10BIT = 23,
+    MEDIA_FORMAT_YUV422_YUYV = 24,
+    MEDIA_FORMAT_YUV422_YVYU = 25,
+    MEDIA_FORMAT_YUV422_UYVY = 26,
+    MEDIA_FORMAT_YUV422_VYUY = 27,
+    MEDIA_FORMAT_YUV440SP = 28,
+    MEDIA_FORMAT_YUV411SP = 29,
+    MEDIA_FORMAT_AUDIO_PCM_S16LE = 30, // planar PCM S16LE audio frame
+    MEDIA_FORMAT_YUV444P = 31,
+    MEDIA_FORMAT_YUV444SP_10BIT = 32,
+    MEDIA_FORMAT_BGR565 = 33,
+    MEDIA_FORMAT_RGB555 = 34,
+    MEDIA_FORMAT_BGR555 = 35,
+    MEDIA_FORMAT_RGB444 = 36,
+    MEDIA_FORMAT_BGR444 = 37,
+    MEDIA_FORMAT_RGB101010 = 38,
+    MEDIA_FORMAT_BGR101010 = 39,
+    // 编码格式（用于模块间传递编码包）
+    MEDIA_FORMAT_H264 = 100,  // H.264 编码包
+    MEDIA_FORMAT_H265 = 101,  // H.265 编码包
+    MEDIA_FORMAT_MJPEG = 102, // MJPEG 编码包
+    MEDIA_FORMAT_JPEG = 103,  // JPEG 编码包
+    MEDIA_FORMAT_MPEG2 = 104,
+    MEDIA_FORMAT_H263 = 105,
+    MEDIA_FORMAT_MPEG4 = 106,
+    MEDIA_FORMAT_VP8 = 107,
+    MEDIA_FORMAT_VP9 = 108,
+    MEDIA_FORMAT_AVSPLUS = 109,
+    MEDIA_FORMAT_AVS = 110,
+    MEDIA_FORMAT_AVS2 = 111,
+    MEDIA_FORMAT_AV1 = 112,
+    MEDIA_FORMAT_AUDIO_G711A = 120, // G.711 A-law audio stream
+    MEDIA_FORMAT_AUDIO_G711U = 121, // G.711 mu-law audio stream
+    MEDIA_FORMAT_AUDIO_AAC = 122,   // AAC-LC audio stream
+} MEDIA_FORMAT;
+
+typedef enum {
+    MEDIA_VIDEO_H264 = 0,
+    MEDIA_VIDEO_H265 = 1,
+    MEDIA_VIDEO_MJPEG = 2,
+    MEDIA_VIDEO_JPEG = 3,
+    MEDIA_VIDEO_MPEG2 = 4,
+    MEDIA_VIDEO_H263 = 5,
+    MEDIA_VIDEO_MPEG4 = 6,
+    MEDIA_VIDEO_VP8 = 7,
+    MEDIA_VIDEO_VP9 = 8,
+    MEDIA_VIDEO_AVSPLUS = 9,
+    MEDIA_VIDEO_AVS = 10,
+    MEDIA_VIDEO_AVS2 = 11,
+    MEDIA_VIDEO_AV1 = 12,
+} MEDIA_VIDEO_TYPE;
+
+typedef enum {
+    MEDIA_AUDIO_CODEC_G711A = 0,
+    MEDIA_AUDIO_CODEC_G711U = 1,
+    MEDIA_AUDIO_CODEC_AAC = 2,
+} MEDIA_AUDIO_CODEC;
+
+typedef enum {
+    MEDIA_AUDIO_SAMPLE_RATE_8000 = 8000,
+    MEDIA_AUDIO_SAMPLE_RATE_16000 = 16000,
+    MEDIA_AUDIO_SAMPLE_RATE_44100 = 44100,
+    MEDIA_AUDIO_SAMPLE_RATE_48000 = 48000,
+} MEDIA_AUDIO_SAMPLE_RATE;
+
+typedef enum {
+    MEDIA_AUDIO_BIT_WIDTH_16 = 16,
+} MEDIA_AUDIO_BIT_WIDTH;
+
+typedef enum {
+    MEDIA_AUDIO_SOUND_MODE_MONO = 1,
+    MEDIA_AUDIO_SOUND_MODE_STEREO = 2,
+} MEDIA_AUDIO_SOUND_MODE;
+
+typedef enum {
+    MEDIA_AUDIO_AAC_TRANSPORT_ADTS = 0,
+} MEDIA_AUDIO_AAC_TRANSPORT;
+
+#define MEDIA_AUDIO_OUTPUT_POOL_ID_UNSET 0
+
+typedef struct {
+    void *virt_addr[2];          // planar PCM, one plane per channel
+    uint32_t len;                // bytes per channel plane
+    uint64_t time_stamp;         // monotonic timestamp in us
+    uint32_t seq;
+    int sample_rate;             // MEDIA_AUDIO_SAMPLE_RATE_*
+    int bit_width;               // MEDIA_AUDIO_BIT_WIDTH_*
+    int snd_mode;                // MEDIA_AUDIO_SOUND_MODE_*
+    int point_num_per_frame;     // samples per channel
+    void *handle;                // reserved for module-owned payload
+} MEDIA_AUDIO_FRAME;
+
+typedef struct {
+    void *stream;
+    uint32_t len;
+    uint64_t time_stamp;         // monotonic timestamp in us
+    uint32_t seq;
+    int codec;                   // MEDIA_AUDIO_CODEC_*
+    void *handle;                // reserved for module-owned payload
+} MEDIA_AUDIO_STREAM;
+
+typedef struct {
+    const char *device;          // NULL -> plughw:0,0
+    int sample_rate;             // 0 -> 48000
+    int bit_width;               // 0 -> 16
+    int snd_mode;                // 0 -> stereo
+    int frame_num;               // 0 -> module default
+    int point_num_per_frame;     // 0 -> module default
+    int output_pool_id;          // required external HOST pool id (>0; 0=unset)
+} MEDIA_AUDIO_IN_ATTR;
+
+typedef struct {
+    const char *device;          // NULL -> plughw:0,0
+    int sample_rate;             // 0 -> 48000
+    int bit_width;               // 0 -> 16
+    int snd_mode;                // 0 -> stereo
+    int frame_num;               // 0 -> module default
+    int point_num_per_frame;     // 0 -> module default
+} MEDIA_AUDIO_OUT_ATTR;
+
+typedef struct {
+    int codec;                   // MEDIA_AUDIO_CODEC_*
+    int sample_rate;             // 0 -> 48000
+    int bit_width;               // 0 -> 16
+    int snd_mode;                // 0 -> stereo
+    int frame_num;               // 0 -> module default
+    int point_num_per_frame;     // G711: 80/160/240/320/480, AAC: 1024
+    int bit_rate;                // AAC only, 0 -> 128000
+    int transport_type;          // MEDIA_AUDIO_AAC_TRANSPORT_*
+    int output_pool_id;          // required external HOST stream pool id (>0; 0=unset)
+} MEDIA_AUDIO_ENC_ATTR;
+
+typedef struct {
+    int codec;                   // MEDIA_AUDIO_CODEC_*
+    int sample_rate;             // 0 -> 48000
+    int bit_width;               // 0 -> 16
+    int snd_mode;                // 0 -> stereo
+    int frame_num;               // 0 -> module default
+    int point_num_per_frame;     // G711: 80/160/240/320/480, AAC: 1024
+    int transport_type;          // MEDIA_AUDIO_AAC_TRANSPORT_*
+    int output_pool_id;          // required external HOST frame pool id (>0; 0=unset)
+} MEDIA_AUDIO_DEC_ATTR;
+
+typedef enum {
+    MEDIA_IMAGE_CODEC_AUTO = 0,
+    MEDIA_IMAGE_CODEC_JPEG = 1,
+    MEDIA_IMAGE_CODEC_PNG = 2,
+    MEDIA_IMAGE_CODEC_BMP = 3,
+} MEDIA_IMAGE_CODEC;
+
+typedef enum {
+    MEDIA_VENC_RC_CBR = 0,        // 固定码率 - 保持恒定码率，适合网络流媒体
+    MEDIA_VENC_RC_VBR = 1,        // 可变码率 - 根据画面复杂度调整，画质优先
+    MEDIA_VENC_RC_FIXQP = 2,      // 固定 QP - 固定量化参数，画质稳定但码率波动大
+    MEDIA_VENC_RC_AVBR = 3,       // 平均可变码率 - 长期平均码率可控，短期可波动
+    MEDIA_VENC_RC_CBR_SHARE = 4,  // 共享 CBR - 多通道共享带宽的 CBR 模式
+    MEDIA_VENC_RC_VBR_SHARE = 5,  // 共享 VBR - 多通道共享带宽的 VBR 模式
+} MEDIA_VENC_RC_MODE;
+
+#define MEDIA_VPSS_MAX_OUTPUTS 16
+#define MEDIA_RGA_MAX_INPUTS 4
+#define MEDIA_RGA_MAX_OUTPUTS 4
+#define MEDIA_NPU_MAX_TOPK 64
+#define MEDIA_NPU_MAX_OBJECTS 256
+#define MEDIA_NPU_MAX_TENSORS 16
+#define MEDIA_NPU_MAX_DIMS 8
+
+typedef struct {
+    const char *device;
+    int width;
+    int height;
+    int stride;     // bytesperline for NV12 (0=driver default)
+    int fps;
+    int buf_cnt;
+    int pool_id;
+    int format;     // 像素格式 (MEDIA_FORMAT_*)
+} MEDIA_VI_ATTR;
+
+typedef enum {
+    MEDIA_VI_SOURCE_EVENT_NONE = 0,
+    MEDIA_VI_SOURCE_EVENT_CONNECTED = 1,
+    MEDIA_VI_SOURCE_EVENT_DISCONNECTED = 2,
+    MEDIA_VI_SOURCE_EVENT_FORMAT_CHANGED = 3,
+    MEDIA_VI_SOURCE_EVENT_SOURCE_CHANGED = 4,
+    MEDIA_VI_SOURCE_EVENT_TIMEOUT = 5,
+} MEDIA_VI_SOURCE_EVENT_TYPE;
+
+typedef struct {
+    char device[64];
+    char driver[32];
+    char card[64];
+    char bus_info[64];
+    int is_hdmi_rx;
+    int connected;          // HDMI RX power_present or detected DV timing
+    int audio_present;
+    int audio_sampling_rate;
+    int width;
+    int height;
+    int fps_milli;          // 60000 表示 60.000fps；0 表示未知
+    int format;             // MEDIA_FORMAT_*
+    uint32_t fourcc;        // V4L2 fourcc
+    char fourcc_name[5];    // printable fourcc, NUL terminated
+    int plane_count;
+    int stride;             // plane0 bytesperline
+    int size_image;         // plane0 sizeimage
+} MEDIA_VI_SOURCE_INFO;
+
+typedef struct {
+    MEDIA_VI_SOURCE_EVENT_TYPE type;
+    MEDIA_VI_SOURCE_INFO before;
+    MEDIA_VI_SOURCE_INFO after;
+} MEDIA_VI_SOURCE_EVENT;
+
+typedef enum {
+    MEDIA_TPG_PATTERN_COLOR_BARS = 0,
+    MEDIA_TPG_PATTERN_CHECKERBOARD = 1,
+    MEDIA_TPG_PATTERN_GRADIENT = 2,
+    MEDIA_TPG_PATTERN_SOLID = 3,
+    MEDIA_TPG_PATTERN_MOVING_BOX = 4,
+} MEDIA_TPG_PATTERN;
+
+typedef struct {
+    int width;       // required > 0
+    int height;      // required > 0
+    int stride;      // 0=auto from format/width
+    int format;      // MEDIA_FORMAT_NV12/NV24/RGB888/BGR888/RGBA/BGRA/ARGB/ABGR/GRAY8
+    int fps;         // <=0 defaults to 30 in module implementation
+    int pool_id;     // required >= 0
+    int pattern;     // MEDIA_TPG_PATTERN_*
+    int block_size;  // checker/moving-box block size, <=0 uses module default
+    uint32_t fg_color; // 0xRRGGBB
+    uint32_t bg_color; // 0xRRGGBB
+} MEDIA_TPG_ATTR;
+
+typedef struct {
+    const char *folder_path;  // required
+    int image_codec;          // MEDIA_IMAGE_CODEC_* (AUTO/JPEG/PNG/BMP)
+    int width;                // required > 0
+    int height;               // required > 0
+    int stride;               // required > 0
+    int format;               // MEDIA_FORMAT_RGB888/BGR888/NV12
+    int fps;                  // required > 0
+    int pool_id;              // required >= 0
+} MEDIA_PIC_SEND_ATTR;
+
+typedef struct {
+    const char *folder_path;  // required
+    int image_codec;          // MEDIA_IMAGE_CODEC_JPEG/PNG/BMP
+    int width;                // required > 0
+    int height;               // required > 0
+    int stride;               // required > 0
+    int format;               // MEDIA_FORMAT_RGB888/BGR888/NV12
+    int input_depth;          // required > 0
+    int jpeg_quality;         // optional: 1..100 (<=0 -> module default 90)
+} MEDIA_PIC_REV_ATTR;
+
+typedef struct {
+    int output_id;
+    int out_width;
+    int out_height;
+    int out_stride;
+    int pool_id;
+    int crop_x;
+    int crop_y;
+    int crop_w;
+    int crop_h;
+    int in_fps;   // input fps reference (-1=disable control, 0=not allowed, >0=control fps)
+    int out_fps;  // target output fps (-1=disable control, 0=not allowed, >0=control fps)
+    int flip_h;
+    int flip_v;
+    int rotate;
+    int output_format;  // 输出格式：MEDIA_FORMAT_NV12 / RGB888/BGR888/RGBA family
+    int keep_aspect_ratio;  // 1=按比例缩放并在输出内居中填黑，0=拉伸到整幅输出
+} MEDIA_VPSS_OUT_ATTR;
+
+typedef struct {
+    int width;
+    int height;
+    int input_stride;
+    int input_depth;   // 输入端口队列深度（0 表示默认=4）
+    int input_format;  // 输入格式：MEDIA_FORMAT_NV12
+    int in_fps;
+    int out_fps;
+    int output_count;  // 输出数量（1-MEDIA_VPSS_MAX_OUTPUTS）
+    MEDIA_VPSS_OUT_ATTR outputs[MEDIA_VPSS_MAX_OUTPUTS];
+} MEDIA_VPSS_ATTR;
+
+typedef struct {
+    int width;
+    int height;
+    int stride;     // bytesperline (0 表示默认=width)
+    int fps;
+    int buf_cnt;
+    int input_depth;  // 输入端口队列深度（0 表示默认=4）
+    int bitrate;
+    int gop;
+    int video_format;  // 编码格式 (MEDIA_FORMAT_H264/H265/MJPEG/JPEG/VP8)
+    int rc_mode;
+    int input_format;
+} MEDIA_VENC_ATTR;
+
+typedef struct {
+    int width;
+    int height;
+    int stride;     // 输出 stride (0 表示自动计算=64 字节对齐)
+    int buf_cnt;
+    int video_type; // 视频格式 (MEDIA_VIDEO_*)
+    int pool_id;    // 输出 buffer pool ID
+    int has_input_port;  // 是否创建输入端口 (1=bind 模式，0=手动模式)
+    int input_depth;     // 输入端口队列深度 (0=默认 4)
+    int output_format;   // 输出帧格式 (0=MEDIA_FORMAT_NV12)
+} MEDIA_VDEC_ATTR;
+
+typedef enum {
+    MEDIA_RGA_ALG_RESIZE = 0,
+    MEDIA_RGA_ALG_CSC = 1,
+    MEDIA_RGA_ALG_ROTATE = 2,
+    MEDIA_RGA_ALG_COMPOSE = 3,
+    MEDIA_RGA_ALG_COPY = 4,
+    MEDIA_RGA_ALG_TRANSLATE = 5,
+    MEDIA_RGA_ALG_FLIP = 6,
+    MEDIA_RGA_ALG_CROP = 7,
+    MEDIA_RGA_ALG_MOSAIC = 8,
+    MEDIA_RGA_ALG_PYRAMID = 9,
+    MEDIA_RGA_ALG_OSD = 10,
+} MEDIA_RGA_ALG;
+
+typedef struct {
+    int port_id;
+    int width;
+    int height;
+    int stride;     // bytes per line (0=auto)
+    int format;     // MEDIA_FORMAT_*
+    int pool_id;    // output pool id; input ignored
+    int crop_x;
+    int crop_y;
+    int crop_w;
+    int crop_h;
+    int dst_x;
+    int dst_y;
+    int mosaic_mode; // IM_MOSAIC_*
+    int pyramid_dir; // IM_UP_SCALE / IM_DOWN_SCALE
+    int rotate;     // 0/90/180/270
+    int flip_h;
+    int flip_v;
+    int queue_depth; // 端口队列深度（0 表示默认=4）
+} MEDIA_RGA_PORT_ATTR;
+
+typedef struct {
+    int algo;
+    int input_count;   // 输入数量（1-MEDIA_RGA_MAX_INPUTS）
+    int output_count;  // 输出数量（1-MEDIA_RGA_MAX_OUTPUTS）
+    int input_depth;
+    int output_depth;
+    MEDIA_RGA_PORT_ATTR inputs[MEDIA_RGA_MAX_INPUTS];
+    MEDIA_RGA_PORT_ATTR outputs[MEDIA_RGA_MAX_OUTPUTS];
+} MEDIA_RGA_GRP_ATTR;
+
+typedef enum {
+    MEDIA_NPU_BACKEND_AUTO = 0,
+    MEDIA_NPU_BACKEND_RKNN = 1,
+    MEDIA_NPU_BACKEND_NNIE = 2,
+    MEDIA_NPU_BACKEND_CPU = 3,
+} MEDIA_NPU_BACKEND;
+
+typedef enum {
+    MEDIA_NPU_TASK_RAW = 0,
+    MEDIA_NPU_TASK_CLASSIFY = 1,
+    MEDIA_NPU_TASK_DETECT = 2,
+    MEDIA_NPU_TASK_SEGMENT = 3,
+} MEDIA_NPU_TASK;
+
+typedef enum {
+    MEDIA_NPU_LAYOUT_UNSET = 0,
+    MEDIA_NPU_LAYOUT_NHWC = 1,
+    MEDIA_NPU_LAYOUT_NCHW = 2,
+} MEDIA_NPU_LAYOUT;
+
+typedef enum {
+    MEDIA_NPU_DATA_TYPE_UNSET = 0,
+    MEDIA_NPU_DATA_TYPE_UINT8 = 1,
+    MEDIA_NPU_DATA_TYPE_INT8 = 2,
+    MEDIA_NPU_DATA_TYPE_FLOAT16 = 3,
+    MEDIA_NPU_DATA_TYPE_FLOAT32 = 4,
+} MEDIA_NPU_DATA_TYPE;
+
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int stride;
+    int layout;
+    int data_type;
+    size_t size;
+    int dim_count;
+    int dims[MEDIA_NPU_MAX_DIMS];
+} MEDIA_NPU_INPUT_ATTR;
+
+typedef struct {
+    const char *model_path;
+    const char *label_path;
+    int backend;
+    int task;
+    int input_width;
+    int input_height;
+    int input_format;
+    int input_layout;
+    int input_depth;
+    int passthrough;
+    int topk;
+    float score_thresh;
+    float nms_thresh;
+    const char *adapter_name;
+    int input_count;
+    int dynamic_shape;
+    MEDIA_NPU_INPUT_ATTR inputs[MEDIA_NPU_MAX_TENSORS];
+} MEDIA_NPU_ATTR;
+
+typedef enum {
+    MEDIA_NPU_RESULT_RAW = 0,
+    MEDIA_NPU_RESULT_CLASSIFY = 1,
+    MEDIA_NPU_RESULT_DETECT = 2,
+    MEDIA_NPU_RESULT_SEGMENT = 3,
+} MEDIA_NPU_RESULT_TYPE;
+
+typedef struct {
+    int class_id;
+    float score;
+    const char *label;
+} MEDIA_NPU_CLASS_ITEM;
+
+typedef struct {
+    int class_count;
+    int topk_count;
+    MEDIA_NPU_CLASS_ITEM topk[MEDIA_NPU_MAX_TOPK];
+} MEDIA_NPU_CLASS_RESULT;
+
+typedef struct {
+    int class_id;
+    float score;
+    float x;
+    float y;
+    float w;
+    float h;
+    const char *label;
+} MEDIA_NPU_OBJECT;
+
+typedef struct {
+    int object_count;
+    MEDIA_NPU_OBJECT objects[MEDIA_NPU_MAX_OBJECTS];
+} MEDIA_NPU_DETECT_RESULT;
+
+typedef struct {
+    int width;
+    int height;
+    int class_count;
+    int format;
+    MEDIA_BUFFER mask_buf;
+} MEDIA_NPU_SEGMENT_RESULT;
+
+typedef struct {
+    int index;
+    int dtype;
+    int layout;
+    int dims[8];
+    int dim_count;
+    void *data;
+    size_t size;
+    float scale;
+    int zero_point;
+} MEDIA_NPU_TENSOR;
+
+typedef struct {
+    int tensor_count;
+    MEDIA_NPU_TENSOR tensors[MEDIA_NPU_MAX_TENSORS];
+} MEDIA_NPU_RAW_RESULT;
+
+typedef struct {
+    int type;
+    uint64_t frame_id;
+    uint64_t pts;
+    union {
+        MEDIA_NPU_RAW_RESULT raw;
+        MEDIA_NPU_CLASS_RESULT classify;
+        MEDIA_NPU_DETECT_RESULT detect;
+        MEDIA_NPU_SEGMENT_RESULT segment;
+    } u;
+} MEDIA_NPU_RESULT;
+
+typedef struct {
+    int backend;
+    int task;
+    int input_count;
+    int output_count;
+    int class_count;
+    int input_width;
+    int input_height;
+    int input_format;
+    const char *model_name;
+    const char *adapter_name;
+} MEDIA_NPU_MODEL_INFO;
+
+#define MEDIA_SYS_MAX_STATS_MODULES 32
+#define MEDIA_SYS_MAX_STATS_PORTS 32
+#define MEDIA_SYS_MAX_STATS_POOLS 16
+#define MEDIA_SYS_STATS_NAME_LEN 64
+#define MEDIA_SYS_STATS_DETAIL_LEN 128
+
+typedef enum {
+    MEDIA_PORT_DIR_INPUT = 0,
+    MEDIA_PORT_DIR_OUTPUT = 1,
+} MEDIA_PORT_DIR;
+
+typedef struct {
+    int has_gpu;
+    double gpu_kernel_ms;
+    double gpu_queue_ms;
+    char detail[MEDIA_SYS_STATS_DETAIL_LEN];
+} MEDIA_MODULE_EXTRA_STATS;
+
+typedef struct {
+    char name[MEDIA_SYS_STATS_NAME_LEN];
+    int direction;              /* MEDIA_PORT_DIR_* */
+    int connected;
+    int width;
+    int height;
+    int stride;
+    int format;
+    int declared_queue_depth;
+
+    int queue_current;
+    int queue_capacity;
+    int queue_high_watermark;
+    uint64_t send_count;
+    uint64_t enqueue_count;
+    uint64_t dequeue_count;
+    uint64_t drop_count;
+    uint64_t manual_overwrite_count;
+    double queue_latency_last_ms;
+    double queue_latency_avg_ms;
+    double queue_latency_max_ms;
+
+    int last_layout_valid;
+    int last_layout_format;
+    int last_layout_width;
+    int last_layout_height;
+    uint32_t last_layout_strides[4];
+} MEDIA_PORT_STATS;
+
+typedef struct {
+    char name[MEDIA_SYS_STATS_NAME_LEN];
+    int type;
+    int state;
+    uint64_t frame_count;        /* total frame count, not reset by MEDIA_SYS_ResetStats */
+    uint64_t stats_frame_count;  /* frame count since last MEDIA_SYS_ResetStats */
+    uint64_t process_count;
+    uint64_t process_fail_count;
+    double fps;                 /* average since last MEDIA_SYS_ResetStats */
+    double process_last_ms;
+    double process_avg_ms;
+    double process_max_ms;
+
+    int has_gpu;
+    double gpu_kernel_ms;
+    double gpu_queue_ms;
+    char gpu_detail[MEDIA_SYS_STATS_DETAIL_LEN];
+
+    int input_count;
+    int output_count;
+    MEDIA_PORT_STATS inputs[MEDIA_SYS_MAX_STATS_PORTS];
+    MEDIA_PORT_STATS outputs[MEDIA_SYS_MAX_STATS_PORTS];
+} MEDIA_MODULE_STATS;
+
+typedef struct {
+    int pool_id;
+    size_t buffer_size;
+    int total_count;
+    int available_count;
+    int used_count;
+    int peak_used_count;
+    uint64_t get_count;
+    uint64_t put_count;
+    uint64_t get_fail_count;
+} MEDIA_POOL_STATS;
+
+typedef struct {
+    char name[MEDIA_SYS_STATS_NAME_LEN];
+    int state;
+    int module_count;
+    int connection_count;
+    int pool_count;
+    MEDIA_MODULE_STATS modules[MEDIA_SYS_MAX_STATS_MODULES];
+    MEDIA_POOL_STATS pools[MEDIA_SYS_MAX_STATS_POOLS];
+} MEDIA_PIPELINE_STATS;
+
+// 系统控制
+int MEDIA_SYS_Init(void);
+int MEDIA_SYS_Exit(void);
+int MEDIA_SYS_SetLicense(const char *path);
+int MEDIA_SYS_DumpChipInfo(const char *path);
+const char *MEDIA_SYS_GetVersion(void);
+int MEDIA_SYS_GetModuleFrameCount(const char *mod, int id, uint64_t *frame_count);
+int MEDIA_SYS_GetPipelineStats(MEDIA_PIPELINE_STATS *stats);
+int MEDIA_SYS_ResetStats(void);
+
+// 绑定/解绑。AUDIO_IN/AUDIO_OUT 默认 dev0 时 id 表示 chn；非默认 dev 可传完整模块名如 AUDIO_IN_1_0，并使用任意 id。
+// src_port/dst_port 必须非空显式指定（如 "output0"/"input0"/"output1"），禁止 NULL/"" 隐式绑第一个端口；端口名一律从 0 编号。
+int MEDIA_SYS_Bind(const char *src_mod, int src_id, const char *src_port,
+                   const char *dst_mod, int dst_id, const char *dst_port);
+int MEDIA_SYS_UnBind(const char *src_mod, int src_id, const char *src_port,
+                     const char *dst_mod, int dst_id, const char *dst_port);
+
+// VI
+int MEDIA_VI_SetAttr(MEDIA_DEV dev, const MEDIA_VI_ATTR *attr);
+int MEDIA_VI_Enable(MEDIA_DEV dev);
+int MEDIA_VI_Disable(MEDIA_DEV dev);
+int MEDIA_VI_GetFrame(MEDIA_DEV dev, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VI_ReleaseFrame(MEDIA_DEV dev, MEDIA_BUFFER buf);
+int MEDIA_VI_QuerySource(const char *device, MEDIA_VI_SOURCE_INFO *info);
+int MEDIA_VI_WaitSourceChange(const char *device, int timeout_ms, MEDIA_VI_SOURCE_EVENT *event);
+
+// TPG (test pattern generator)
+int MEDIA_TPG_CreateChn(int chn, const MEDIA_TPG_ATTR *attr);
+int MEDIA_TPG_SetAttr(int chn, const MEDIA_TPG_ATTR *attr);
+int MEDIA_TPG_DestroyChn(int chn);
+int MEDIA_TPG_Enable(int chn);
+int MEDIA_TPG_Disable(int chn);
+int MEDIA_TPG_Start(int chn);
+int MEDIA_TPG_Stop(int chn);
+int MEDIA_TPG_GetFrame(int chn, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_TPG_ReleaseFrame(int chn, MEDIA_BUFFER buf);
+
+// Pool
+int MEDIA_POOL_CreateWithMode(int pool_id, size_t size, int count, MEDIA_POOL_ALLOC_MODE alloc_mode);
+#ifndef ALLDEMO_MEDIA_POOL_ALLOC_MODE
+#define ALLDEMO_MEDIA_POOL_ALLOC_MODE MEDIA_POOL_ALLOC_MODE_COMPAT
+#endif
+#ifndef MEDIA_POOL_DEFAULT_ALLOC_MODE
+#define MEDIA_POOL_DEFAULT_ALLOC_MODE ALLDEMO_MEDIA_POOL_ALLOC_MODE
+#endif
+#ifndef MEDIA_POOL_CREATE_NO_DEFAULT_MACRO
+#define MEDIA_POOL_Create(pool_id, size, count) \
+    MEDIA_POOL_CreateWithMode((pool_id), (size), (count), MEDIA_POOL_DEFAULT_ALLOC_MODE)
+#endif
+int MEDIA_POOL_Destroy(int pool_id);
+int MEDIA_POOL_Get(int pool_id, MEDIA_BUFFER *buf);
+int MEDIA_POOL_Put(MEDIA_BUFFER buf);
+
+// 用户手动申请/归还 Buffer
+int MEDIA_POOL_GetBuffer(int pool_id, MEDIA_BUFFER *buf);
+int MEDIA_POOL_PutBuffer(MEDIA_BUFFER buf);
+int MEDIA_POOL_GetFd(MEDIA_BUFFER buf, int *dmabuf_fd, size_t *size);
+size_t MEDIA_POOL_GetSize(MEDIA_BUFFER buf);
+void *MEDIA_POOL_GetVaddr(MEDIA_BUFFER buf);
+int MEDIA_POOL_BeginCpuAccess(MEDIA_BUFFER buf, uint64_t flags);
+int MEDIA_POOL_EndCpuAccess(MEDIA_BUFFER buf, uint64_t flags);
+int MEDIA_BUFFER_SetMeta(MEDIA_BUFFER buf, const MEDIA_BUFFER_META *meta);
+int MEDIA_BUFFER_GetMeta(MEDIA_BUFFER buf, MEDIA_BUFFER_META *meta);
+//int MEDIA_POOL_ImportFd(int pool_id, int index, int dmabuf_fd, size_t size);
+
+// VPSS
+int MEDIA_VPSS_SetAttr(int grp_id, const MEDIA_VPSS_ATTR *attr);
+int MEDIA_VPSS_SetOutCrop(int grp_id, int output_id, int crop_x, int crop_y, int crop_w, int crop_h);
+int MEDIA_VPSS_SetOutAttr(int grp_id, const MEDIA_VPSS_OUT_ATTR *attr);
+int MEDIA_VPSS_DestroyGrp(int grp_id);
+int MEDIA_VPSS_Enable(int grp_id);
+int MEDIA_VPSS_Disable(int grp_id);
+int MEDIA_VPSS_Group_SendFrame(int grp_id, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_VPSS_Chn_GetFrame(int grp_id, int output_id, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VPSS_Chn_ReleaseFrame(int grp_id, int output_id, MEDIA_BUFFER buf);
+
+// VENC
+int MEDIA_VENC_CreateChn(int chn, int width, int height, int stride, int fps,
+                         int buf_cnt, int input_depth, int output_pool_id,
+                         int bitrate, int gop, int video_format);
+int MEDIA_VENC_SetAttr(int chn, const MEDIA_VENC_ATTR *attr);
+int MEDIA_VENC_DestroyChn(int chn);
+int MEDIA_VENC_Enable(int chn);
+int MEDIA_VENC_Disable(int chn);
+int MEDIA_VENC_Start(int chn);
+int MEDIA_VENC_Stop(int chn);
+int MEDIA_VENC_GetFrame(int chn, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VENC_ReleaseFrame(int chn, MEDIA_BUFFER buf);
+int MEDIA_VENC_GetMpp(int chn, void **mpp_ctx, void **mpp_mpi);
+int MEDIA_VENC_GetPacket(int chn, MEDIA_PACKET *pkt, int timeout_ms);
+int MEDIA_VENC_ReleasePacket(int chn, MEDIA_PACKET *pkt);
+
+// VENC 扩展参数设置接口
+int MEDIA_VENC_SetRcMode(int chn, int rc_mode, int bitrate);
+int MEDIA_VENC_SetFormat(int chn, int format);
+int MEDIA_VENC_SetVideoType(int chn, int video_type);
+int MEDIA_VENC_SetQpConfig(int chn, int qp_init, int qp_max, int qp_min);
+int MEDIA_VENC_SetBpsConfig(int chn, int bps_max, int bps_min);
+
+// H265 专属参数设置
+int MEDIA_VENC_SetH265Profile(int chn, int profile);
+int MEDIA_VENC_SetH265Level(int chn, int level);
+int MEDIA_VENC_SetH265Tier(int chn, int tier);
+int MEDIA_VENC_SetH265CuSize(int chn, int cu_size);
+int MEDIA_VENC_SetH265SaoEn(int chn, int sao_en);
+int MEDIA_VENC_SetH265DblkEn(int chn, int dblk_en);
+
+// H264 专属参数设置
+int MEDIA_VENC_SetH264Profile(int chn, int profile);
+int MEDIA_VENC_SetH264Level(int chn, int level);
+int MEDIA_VENC_SetH264CabacEn(int chn, int cabac_en);
+
+// VDEC
+int MEDIA_VDEC_CreateChn(int chn, const MEDIA_VDEC_ATTR *attr);
+int MEDIA_VDEC_SetAttr(int chn, const MEDIA_VDEC_ATTR *attr);
+int MEDIA_VDEC_DestroyChn(int chn);
+int MEDIA_VDEC_Enable(int chn);
+int MEDIA_VDEC_Disable(int chn);
+int MEDIA_VDEC_Start(int chn);
+int MEDIA_VDEC_Stop(int chn);
+int MEDIA_VDEC_SendPacket(int chn, void *data, size_t size, uint64_t pts);
+
+// AUDIO_IN (ALSA capture)
+size_t MEDIA_AUDIO_CalcFramePoolSize(int sample_rate, int bit_width, int snd_mode, int point_num_per_frame);
+size_t MEDIA_AUDIO_CalcStreamPoolSize(int codec, int sample_rate, int bit_width, int snd_mode, int point_num_per_frame, int bit_rate);
+int MEDIA_AUDIO_IN_CreateChn(int dev, int chn, const MEDIA_AUDIO_IN_ATTR *attr);
+int MEDIA_AUDIO_IN_DestroyChn(int dev, int chn);
+int MEDIA_AUDIO_IN_Start(int dev, int chn);
+int MEDIA_AUDIO_IN_Stop(int dev, int chn);
+int MEDIA_AUDIO_IN_Enable(int dev, int chn);
+int MEDIA_AUDIO_IN_Disable(int dev, int chn);
+int MEDIA_AUDIO_IN_GetFrame(int dev, int chn, MEDIA_AUDIO_FRAME *frame, int timeout_ms);
+int MEDIA_AUDIO_IN_ReleaseFrame(int dev, int chn, MEDIA_AUDIO_FRAME *frame);
+
+// AUDIO_OUT (ALSA playback)
+int MEDIA_AUDIO_OUT_CreateChn(int dev, int chn, const MEDIA_AUDIO_OUT_ATTR *attr);
+int MEDIA_AUDIO_OUT_DestroyChn(int dev, int chn);
+int MEDIA_AUDIO_OUT_Start(int dev, int chn);
+int MEDIA_AUDIO_OUT_Stop(int dev, int chn);
+int MEDIA_AUDIO_OUT_Enable(int dev, int chn);
+int MEDIA_AUDIO_OUT_Disable(int dev, int chn);
+int MEDIA_AUDIO_OUT_SendFrame(int dev, int chn, const MEDIA_AUDIO_FRAME *frame, int timeout_ms);
+
+// AUDIO_ENC (software AENC)
+int MEDIA_AUDIO_ENC_CreateChn(int chn, const MEDIA_AUDIO_ENC_ATTR *attr);
+int MEDIA_AUDIO_ENC_DestroyChn(int chn);
+int MEDIA_AUDIO_ENC_Start(int chn);
+int MEDIA_AUDIO_ENC_Stop(int chn);
+int MEDIA_AUDIO_ENC_Enable(int chn);
+int MEDIA_AUDIO_ENC_Disable(int chn);
+int MEDIA_AUDIO_ENC_SendFrame(int chn, const MEDIA_AUDIO_FRAME *frame, int timeout_ms);
+int MEDIA_AUDIO_ENC_GetStream(int chn, MEDIA_AUDIO_STREAM *stream, int timeout_ms);
+int MEDIA_AUDIO_ENC_ReleaseStream(int chn, MEDIA_AUDIO_STREAM *stream);
+
+// AUDIO_DEC (software ADEC)
+int MEDIA_AUDIO_DEC_CreateChn(int chn, const MEDIA_AUDIO_DEC_ATTR *attr);
+int MEDIA_AUDIO_DEC_DestroyChn(int chn);
+int MEDIA_AUDIO_DEC_Start(int chn);
+int MEDIA_AUDIO_DEC_Stop(int chn);
+int MEDIA_AUDIO_DEC_Enable(int chn);
+int MEDIA_AUDIO_DEC_Disable(int chn);
+int MEDIA_AUDIO_DEC_SendStream(int chn, const MEDIA_AUDIO_STREAM *stream, int timeout_ms);
+int MEDIA_AUDIO_DEC_GetFrame(int chn, MEDIA_AUDIO_FRAME *frame, int timeout_ms);
+int MEDIA_AUDIO_DEC_ReleaseFrame(int chn, MEDIA_AUDIO_FRAME *frame);
+
+// RTSP_SEND
+typedef struct {
+    const char *bind_addr;      // 绑定地址，NULL 表示所有接口
+    int port;                   // RTSP 端口
+    const char *url_suffix;     // URL 后缀，如 "live"
+    int width;                  // 视频宽度
+    int height;                 // 视频高度
+    int fps;                    // 帧率
+    int rtp_port_base;          // RTP 起始端口，默认 50000
+    int input_depth;            // 输入端口队列深度（0=默认 4, >0=指定深度）
+    int max_clients;            // 最大并发客户端数（<=0 按 1 处理）
+    int transport_mode;         // 传输模式 (0=UDP, 1=TCP)
+    int video_format;           // 视频格式 (MEDIA_FORMAT_H264 / MEDIA_FORMAT_H265)
+} MEDIA_RTSP_SEND_ATTR;
+
+int MEDIA_RTSP_SEND_CreateGrp(int grp, const MEDIA_RTSP_SEND_ATTR *attr);
+int MEDIA_RTSP_SEND_DestroyGrp(int grp);
+int MEDIA_RTSP_SEND_Start(int grp);
+int MEDIA_RTSP_SEND_Stop(int grp);
+int MEDIA_RTSP_SEND_Enable(int grp);
+int MEDIA_RTSP_SEND_Disable(int grp);
+
+// RTSP_RECV
+typedef struct {
+    const char *url;            // RTSP URL
+    int recv_buffer_size;       // 接收缓冲区大小 (0 = 默认 512KB)
+    int rtp_port;               // 本地 RTP 端口 (0 = 自动选择)
+    int transport_mode;         // 传输模式 (0=UDP, 1=TCP)
+    int output_pool_id;         // 输出 buffer pool ID（必须从外部传入）
+    int video_format;           // 视频格式 (0=AUTO from SDP, MEDIA_FORMAT_H264 / MEDIA_FORMAT_H265)
+    int width;                  // 视频宽度 (0=从 SDP 解析)
+    int height;                 // 视频高度 (0=从 SDP 解析)
+    int fps;                    // 帧率 (0=默认 30)
+} MEDIA_RTSP_RECV_ATTR;
+
+int MEDIA_RTSP_RECV_CreateGrp(int grp, const MEDIA_RTSP_RECV_ATTR *attr);
+int MEDIA_RTSP_RECV_DestroyGrp(int grp);
+int MEDIA_RTSP_RECV_Start(int grp);
+int MEDIA_RTSP_RECV_Stop(int grp);
+int MEDIA_RTSP_RECV_Enable(int grp);
+int MEDIA_RTSP_RECV_Disable(int grp);
+
+typedef struct {
+    const char *bind_addr;      // 绑定地址，NULL 表示所有接口
+    int port;                   // RTSP 端口
+    const char *url_suffix;     // URL 后缀，如 "live"
+    int width;                  // 视频宽度
+    int height;                 // 视频高度
+    int fps;                    // 帧率
+    int rtp_port_base;          // RTP 起始端口，默认 50000
+    int input_depth;            // 输入端口队列深度（0=默认 4, >0=指定深度）
+    int max_clients;            // 最大并发客户端数（<=0 按 1 处理）
+    int transport_mode;         // 传输模式 (0=UDP, 1=TCP)
+    int video_format;           // 视频格式 (MEDIA_FORMAT_H264 / MEDIA_FORMAT_H265)
+    int audio_enabled;          // 是否启用音频 track
+    int audio_codec;            // 音频编码格式 (MEDIA_AUDIO_CODEC_*)
+    int audio_sample_rate;      // 音频采样率，0=48000
+    int audio_channels;         // 音频声道数，0=2
+    int audio_input_depth;      // 音频输入端口队列深度（0=默认 8）
+} MEDIA_RTSP_SEND_LIB_ATTR;
+
+int MEDIA_RTSP_SEND_LIB_CreateGrp(int grp, const MEDIA_RTSP_SEND_LIB_ATTR *attr);
+int MEDIA_RTSP_SEND_LIB_DestroyGrp(int grp);
+int MEDIA_RTSP_SEND_LIB_Start(int grp);
+int MEDIA_RTSP_SEND_LIB_Stop(int grp);
+int MEDIA_RTSP_SEND_LIB_Enable(int grp);
+int MEDIA_RTSP_SEND_LIB_Disable(int grp);
+int MEDIA_RTSP_SEND_LIB_SendAudioStream(int grp, const MEDIA_AUDIO_STREAM *stream, int timeout_ms);
+
+typedef struct {
+    const char *url;            // RTSP URL
+    int recv_buffer_size;       // 接收缓冲区大小 (0 = 默认 512KB)
+    int rtp_port;               // 本地 RTP 端口 (0 = 自动选择)
+    int transport_mode;         // 传输模式 (0=UDP, 1=TCP)
+    int output_pool_id;         // 视频输出 buffer pool ID（必须从外部传入）
+    int video_format;           // 视频格式 (0=AUTO from SDP, MEDIA_FORMAT_H264 / MEDIA_FORMAT_H265)
+    int width;                  // 视频宽度 (0=从 SDP 解析)
+    int height;                 // 视频高度 (0=从 SDP 解析)
+    int fps;                    // 帧率 (0=默认 30)
+    int audio_enabled;          // 是否接收音频 track
+    int audio_codec;            // 音频编码格式提示，实际以 SDP 为准
+    int audio_sample_rate;      // 音频采样率提示，0=从 SDP/48000
+    int audio_channels;         // 音频声道数提示，0=从 SDP/2
+    int audio_output_pool_id;   // 音频输出/接收 HOST stream pool ID，slot >= 8192；>0 启用，0=未设置，<0 表示不缓存或推送音频输出
+    int audio_frame_num;        // 音频 stream pool 深度，0=默认 8
+} MEDIA_RTSP_REV_LIB_ATTR;
+
+int MEDIA_RTSP_REV_LIB_CreateGrp(int grp, const MEDIA_RTSP_REV_LIB_ATTR *attr);
+int MEDIA_RTSP_REV_LIB_DestroyGrp(int grp);
+int MEDIA_RTSP_REV_LIB_Start(int grp);
+int MEDIA_RTSP_REV_LIB_Stop(int grp);
+int MEDIA_RTSP_REV_LIB_Enable(int grp);
+int MEDIA_RTSP_REV_LIB_Disable(int grp);
+int MEDIA_RTSP_REV_LIB_GetAudioStream(int grp, MEDIA_AUDIO_STREAM *stream, int timeout_ms);
+int MEDIA_RTSP_REV_LIB_ReleaseAudioStream(int grp, MEDIA_AUDIO_STREAM *stream);
+
+// BLEND_PYR
+typedef struct {
+    int width;
+    int height;
+    int input_stride;
+    int input_depth;
+    int input_format;
+    int output_stride;
+} MEDIA_BLEND_PYR_ATTR;
+
+int MEDIA_BLEND_PYR_SetAttr(int grp_id, const MEDIA_BLEND_PYR_ATTR *attr);
+int MEDIA_BLEND_PYR_DestroyGrp(int grp_id);
+int MEDIA_BLEND_PYR_Enable(int grp_id);
+int MEDIA_BLEND_PYR_Disable(int grp_id);
+int MEDIA_BLEND_PYR_GetFrame(int grp_id, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_BLEND_PYR_ReleaseFrame(int grp_id, MEDIA_BUFFER buf);
+
+// BLEND_PYR Mask 设置 (MPI 接口)
+int MEDIA_BLEND_PYR_SetMask(int grp_id, MEDIA_BUFFER *mask_buf);
+int MEDIA_BLEND_PYR_GetMaskStatus(int grp_id);
+
+// RGA (framework)
+int MEDIA_RGA_CreateChn(int chn, int width, int height, int format);
+int MEDIA_RGA_SetAttr(int chn, int width, int height, int format);
+int MEDIA_RGA_DestroyChn(int chn);
+int MEDIA_RGA_Start(int chn);
+int MEDIA_RGA_Stop(int chn);
+int MEDIA_RGA_CreateGrp(int grp, const MEDIA_RGA_GRP_ATTR *attr);
+int MEDIA_RGA_SetGrpAttr(int grp, const MEDIA_RGA_GRP_ATTR *attr);
+int MEDIA_RGA_SetInAttr(int grp, int in_idx, const MEDIA_RGA_PORT_ATTR *attr);
+int MEDIA_RGA_SetOutAttr(int grp, int out_idx, const MEDIA_RGA_PORT_ATTR *attr);
+int MEDIA_RGA_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_RGA_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// NPU generic inference module
+int MEDIA_NPU_CreateGrp(int grp, const MEDIA_NPU_ATTR *attr);
+int MEDIA_NPU_DestroyGrp(int grp);
+int MEDIA_NPU_Start(int grp);
+int MEDIA_NPU_Stop(int grp);
+int MEDIA_NPU_Enable(int grp);
+int MEDIA_NPU_Disable(int grp);
+int MEDIA_NPU_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_NPU_SendFrameEx(int grp, int input_idx, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_NPU_GetResult(int grp, MEDIA_NPU_RESULT *result, int timeout_ms);
+int MEDIA_NPU_ReleaseResult(int grp, MEDIA_NPU_RESULT *result);
+int MEDIA_NPU_GetModelInfo(int grp, MEDIA_NPU_MODEL_INFO *info);
+int MEDIA_NPU_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_NPU_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// Stereo depth RKNN/NPU module. Input ports are input0/input1, output0 is float32 depth_mm.
+typedef enum {
+    MEDIA_STEREO_DEPTH_OUTPUT_DISPARITY_F32 = 0,
+    MEDIA_STEREO_DEPTH_OUTPUT_DEPTH_MM_F32 = 1,
+} MEDIA_STEREO_DEPTH_OUTPUT_KIND;
+
+typedef struct {
+    const char *model_path;
+    int input_width;
+    int input_height;
+    int input_format;       // e.g. MEDIA_FORMAT_TENSOR_NHWC_F16
+    int input_stride;       // bytes per row; tensor f16 default is width * 3 * sizeof(fp16)
+    int input_depth;
+    int input_layout;       // MEDIA_NPU_LAYOUT_*
+    int input_data_type;    // MEDIA_NPU_DATA_TYPE_*, 0 = use model attr
+    int output_width;
+    int output_height;
+    int output_stride;      // first version requires output_width * sizeof(float)
+    int output_pool_id;
+    int output_kind;        // MEDIA_STEREO_DEPTH_OUTPUT_*
+    int core_mask;          // 0 = RKNN default, 7 = RKNN_NPU_CORE_0_1_2
+    int query_radius;
+    int auto_save_depth;
+    const char *depth_bin_path;
+    float fx;
+    float fy;
+    float cx;
+    float cy;
+    float baseline_mm;
+    float doffs;
+    float min_valid_disparity;
+    float max_depth_mm;
+} MEDIA_STEREO_DEPTH_NPU_ATTR;
+
+typedef struct {
+    int valid;
+    int input_x;
+    int input_y;
+    int depth_x;
+    int depth_y;
+    int sample_count;
+    float depth_mm;
+    float x_mm;
+    float y_mm;
+    float z_mm;
+} MEDIA_STEREO_DEPTH_POINT3D;
+
+typedef struct {
+    int valid;
+    uint64_t frame_id;
+    MEDIA_STEREO_DEPTH_POINT3D p0;
+    MEDIA_STEREO_DEPTH_POINT3D p1;
+    float distance_mm;
+} MEDIA_STEREO_DEPTH_DISTANCE;
+
+typedef struct {
+    double infer_ms;
+    double post_ms;
+    double total_ms;
+    int input_zero_copy;
+    int output_zero_copy;
+    int fallback_used;
+    uint64_t frame_id;
+    int depth_width;
+    int depth_height;
+} MEDIA_STEREO_DEPTH_NPU_PERF;
+
+int MEDIA_STEREO_DEPTH_NPU_CreateGrp(int grp, const MEDIA_STEREO_DEPTH_NPU_ATTR *attr);
+int MEDIA_STEREO_DEPTH_NPU_DestroyGrp(int grp);
+int MEDIA_STEREO_DEPTH_NPU_Start(int grp);
+int MEDIA_STEREO_DEPTH_NPU_Stop(int grp);
+int MEDIA_STEREO_DEPTH_NPU_Enable(int grp);
+int MEDIA_STEREO_DEPTH_NPU_Disable(int grp);
+int MEDIA_STEREO_DEPTH_NPU_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_STEREO_DEPTH_NPU_SendFrameEx(int grp, int input_idx, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_STEREO_DEPTH_NPU_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_STEREO_DEPTH_NPU_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_STEREO_DEPTH_NPU_QueryDistance(int grp,
+                                         int x0, int y0,
+                                         int x1, int y1,
+                                         int radius,
+                                         MEDIA_STEREO_DEPTH_DISTANCE *result);
+int MEDIA_STEREO_DEPTH_NPU_SaveLastDepthBin(int grp, const char *path);
+int MEDIA_STEREO_DEPTH_NPU_GetLastPerf(int grp, MEDIA_STEREO_DEPTH_NPU_PERF *perf);
+
+// Thermal super-resolution on RKNN/NPU.
+// First implementation targets single-input GRAY8 thermal frames, normally 320x256 -> 1280x1024 x4.
+typedef struct {
+    const char *model_path;     // RKNN model path
+    int input_width;            // input width, e.g. 320
+    int input_height;           // input height, e.g. 256
+    int input_format;           // MEDIA_FORMAT_GRAY8
+    int input_stride;           // 0 = input_width
+    int input_depth;            // 0 = 4
+    int output_width;           // 0 = input_width * scale
+    int output_height;          // 0 = input_height * scale
+    int output_stride;          // 0 = output_width
+    int output_pool_id;         // must point to buffers sized for output_stride * output_height
+    int scale;                  // 0 = 4; only x4 is supported in the first version
+    int core_mask;              // 0 = RKNN default, 7 = RKNN_NPU_CORE_0_1_2
+    int passthrough;            // 1 = nearest x4 bypass, keeping output dimensions stable
+} MEDIA_THERMAL_SR_NPU_ATTR;
+
+typedef struct {
+    double infer_ms;            // RKNN input+run time; -1 when bypass/fallback
+    double post_ms;             // RKNN output conversion time; -1 when bypass/fallback
+    double total_ms;            // module processing time
+    int npu_enabled;            // 1 when last frame used RKNN successfully
+    int fallback_used;          // 1 when last frame fell back to nearest x4
+    int input_width;
+    int input_height;
+    int output_width;
+    int output_height;
+} MEDIA_THERMAL_SR_NPU_PERF;
+
+int MEDIA_THERMAL_SR_NPU_CreateGrp(int grp, const MEDIA_THERMAL_SR_NPU_ATTR *attr);
+int MEDIA_THERMAL_SR_NPU_DestroyGrp(int grp);
+int MEDIA_THERMAL_SR_NPU_Start(int grp);
+int MEDIA_THERMAL_SR_NPU_Stop(int grp);
+int MEDIA_THERMAL_SR_NPU_Enable(int grp);
+int MEDIA_THERMAL_SR_NPU_Disable(int grp);
+int MEDIA_THERMAL_SR_NPU_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_THERMAL_SR_NPU_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_THERMAL_SR_NPU_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_THERMAL_SR_NPU_SetPassthrough(int grp, int enable);
+int MEDIA_THERMAL_SR_NPU_GetLastPerf(int grp, MEDIA_THERMAL_SR_NPU_PERF *perf);
+
+// Color super-resolution on RKNN/NPU.
+// First implementation targets RGB888/BGR888 still frames, normally 480x270 -> 1920x1080 x4.
+typedef struct {
+    const char *model_path;     // RKNN model path
+    int input_width;            // low-resolution input width
+    int input_height;           // low-resolution input height
+    int input_format;           // MEDIA_FORMAT_RGB888 or MEDIA_FORMAT_BGR888
+    int input_stride;           // 0 = input_width * 3
+    int input_depth;            // 0 = 4
+    int output_width;           // 0 = input_width * scale
+    int output_height;          // 0 = input_height * scale
+    int output_format;          // 0 = input_format; RGB888/BGR888 only
+    int output_stride;          // 0 = output_width * 3
+    int output_pool_id;         // must point to buffers sized for output_stride * output_height
+    int scale;                  // 0 = 4; only x4 is supported in the first version
+    int tile_width;             // 0 = 128; only 128 is supported in the first version
+    int tile_height;            // 0 = 128; only 128 is supported in the first version
+    int core_mask;              // 0 = RKNN default, 7 = RKNN_NPU_CORE_0_1_2
+    int passthrough;            // 1 = nearest x4 bypass for link/debug only
+} MEDIA_COLOR_SR_NPU_ATTR;
+
+typedef struct {
+    double infer_ms;            // sum of RKNN input+run time over tiles; -1 when bypass/failure
+    double post_ms;             // sum of RKNN output conversion time over tiles; -1 when bypass/failure
+    double total_ms;            // module processing time
+    int npu_enabled;            // 1 when last frame used RKNN successfully
+    int fallback_used;          // 1 when bypass or RKNN failure happened
+    int tile_count;             // number of 128x128 tiles for the configured frame
+    int input_width;
+    int input_height;
+    int input_format;
+    int output_width;
+    int output_height;
+    int output_format;
+} MEDIA_COLOR_SR_NPU_PERF;
+
+int MEDIA_COLOR_SR_NPU_CreateGrp(int grp, const MEDIA_COLOR_SR_NPU_ATTR *attr);
+int MEDIA_COLOR_SR_NPU_DestroyGrp(int grp);
+int MEDIA_COLOR_SR_NPU_Start(int grp);
+int MEDIA_COLOR_SR_NPU_Stop(int grp);
+int MEDIA_COLOR_SR_NPU_Enable(int grp);
+int MEDIA_COLOR_SR_NPU_Disable(int grp);
+int MEDIA_COLOR_SR_NPU_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_COLOR_SR_NPU_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_COLOR_SR_NPU_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_COLOR_SR_NPU_SetPassthrough(int grp, int enable);
+int MEDIA_COLOR_SR_NPU_GetLastPerf(int grp, MEDIA_COLOR_SR_NPU_PERF *perf);
+
+// Retinex (图像增强算法)
+typedef struct {
+    int scale_count;     // 输入数量：1/2/3
+    int width;           // 图像宽度
+    int height;          // 图像高度
+    int format;          // 图像格式（MEDIA_FORMAT_NV12）
+    int output_depth;    // 输出端口队列深度（0 表示默认=4）
+    int input_depth;     // 输入端口队列深度（0 表示默认=4）
+    int input_stride;    // 输入 stride（0 表示自动计算）
+    int output_stride;   // 输出 stride（0 表示自动计算）
+    float gain;          // Retinex 增益
+    float threshold;     // 阈值
+    float log_min;       // 对数最小值
+    float log_max;       // 对数最大值
+    int passthrough;     // 运行时直通模式（仅 scale_count=1）
+} MEDIA_RETINEX_ATTR;
+
+int MEDIA_RETINEX_CreateGrp(int grp, const MEDIA_RETINEX_ATTR *attr);
+int MEDIA_RETINEX_SetGrpAttr(int grp, const MEDIA_RETINEX_ATTR *attr);
+int MEDIA_RETINEX_DestroyGrp(int grp);
+int MEDIA_RETINEX_Start(int grp);
+int MEDIA_RETINEX_Stop(int grp);
+int MEDIA_RETINEX_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_RETINEX_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_RETINEX_SetPassthrough(int grp, int enable);
+
+
+// ThermalColor (热成像颜色映射）
+typedef enum {
+    MEDIA_THERMAL_COLOR_RAINBOW = 0,      // 彩虹色（蓝→青→绿→黄→红，4 段）
+    MEDIA_THERMAL_COLOR_BLACK_HOT = 1,    // 黑热（黑→白）
+    MEDIA_THERMAL_COLOR_WHITE_HOT = 2,    // 白热（白→黑）
+    MEDIA_THERMAL_COLOR_IRON = 3,         // 铁红（金属氧化色，3 段）
+    MEDIA_THERMAL_COLOR_SEPIA = 4,        // 怀旧（棕褐色）
+    MEDIA_THERMAL_COLOR_BLUE_RED = 5,     // 蓝红（蓝→红）
+    MEDIA_THERMAL_COLOR_GRAYSCALE = 6,    // 灰度（原始）
+    MEDIA_THERMAL_COLOR_RAINBOW1 = 7,     // 彩虹色变体 1（黑→蓝→青→绿→黄→品红→白，6 段）
+    MEDIA_THERMAL_COLOR_RAINBOW2 = 8,     // 彩虹色变体 2（蓝→青→绿→黄→品红→白，5 段）
+    MEDIA_THERMAL_COLOR_RAINBOW3 = 9,     // 彩虹色变体 3（蓝→青→绿→黄→橙→红，5 段）
+    MEDIA_THERMAL_COLOR_PSEUDO1 = 10,     // 伪彩色 1（简单算法）
+    MEDIA_THERMAL_COLOR_PSEUDO2 = 11,     // 伪彩色 2（4 段细致渐变）
+    MEDIA_THERMAL_COLOR_METAL1 = 12,      // 金属色调 1（5 段）
+    MEDIA_THERMAL_COLOR_METAL2 = 13,      // 金属色调 2（复杂算法）
+    MEDIA_THERMAL_COLOR_ZHOU = 14,        // Zhou 模式（4 段变体）
+    MEDIA_THERMAL_COLOR_NING = 15,        // Ning 模式（4 段变体）
+} MEDIA_THERMAL_COLOR_MODE;
+
+typedef struct {
+    int width;               // 输入分辨率宽
+    int height;              // 输入分辨率高
+    int format;              // 输入格式（MEDIA_FORMAT_NV12 或 MEDIA_FORMAT_GRAY8）
+    int color_mode;          // 颜色模式（MEDIA_THERMAL_COLOR_MODE）
+    int input_depth;         // 输入端口队列深度（0 表示默认=4）
+    int output_depth;        // 输出端口队列深度（0 表示默认=4）
+} MEDIA_THERMAL_ATTR;
+
+int MEDIA_THERMAL_CreateGrp(int grp, const MEDIA_THERMAL_ATTR *attr);
+int MEDIA_THERMAL_DestroyGrp(int grp);
+int MEDIA_THERMAL_Start(int grp);
+int MEDIA_THERMAL_Stop(int grp);
+int MEDIA_THERMAL_Process(int grp, MEDIA_BUFFER input, MEDIA_BUFFER *output);
+int MEDIA_THERMAL_SetColorMode(int grp, int color_mode);
+int MEDIA_THERMAL_SetUvLut(int grp, const uint8_t *uv_lut, size_t size);
+
+
+
+
+// VMix (Vulkan 视频混流模块）
+#define MEDIA_VMIX_MAX_INPUTS 16
+
+typedef struct {
+    int enabled;              // 是否启用该通道（0=禁用，1=启用）
+    int x;                    // X 坐标偏移
+    int y;                    // Y 坐标偏移
+    int width;                // 目标宽度（0=不缩放）
+    int height;               // 目标高度（0=不缩放）
+    float alpha;              // Alpha 透明度（0.0-1.0）
+    int stride;               // 输入 stride (0 表示按输入格式默认对齐)
+    int format;               // 输入格式 (MEDIA_FORMAT_NV12/RGB family，0 或 -1 表示使用全局默认格式)
+} MEDIA_VMIX_CHANNEL;
+
+typedef struct {
+    MEDIA_VMIX_CHANNEL channels[MEDIA_VMIX_MAX_INPUTS];
+    int input_count;          // 输入通道数（1-MEDIA_VMIX_MAX_INPUTS）
+    int output_width;         // 输出宽度
+    int output_height;        // 输出高度
+    int format;               // 单路 output0 输出格式和默认输入格式（MEDIA_FORMAT_NV12/RGB family）
+    int input_depth;          // 输入端口队列深度（0 表示默认=4）
+    int output_pool_id;       // 输出 buffer 池 ID
+    int output_stride;        // 输出 stride (0 表示按输出格式默认对齐)
+    int primary_index;        // 主输入索引 (-1 表示自动选择第一个启用的通道)
+} MEDIA_VMIX_ATTR;
+
+int MEDIA_VMIX_SetAttr(int grp, const MEDIA_VMIX_ATTR *attr);
+int MEDIA_VMIX_CreateGrp(int grp, const MEDIA_VMIX_ATTR *attr);
+int MEDIA_VMIX_DestroyGrp(int grp);
+int MEDIA_VMIX_Start(int grp);
+int MEDIA_VMIX_Stop(int grp);
+int MEDIA_VMIX_Enable(int grp);
+int MEDIA_VMIX_Disable(int grp);
+int MEDIA_VMIX_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VMIX_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// CSC RGA (使用 RGA 硬件的颜色空间转换模块）
+typedef struct {
+    int input_width;            /* 输入宽度 */
+    int input_height;           /* 输入高度 */
+    int input_format;           /* 输入格式 (MEDIA_FORMAT_NV12, RGB family) */
+    int output_format;          /* 输出格式 (MEDIA_FORMAT_NV12, RGB family) */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int input_stride;           /* 输入 stride (0 表示根据格式自动计算) */
+    int output_stride;          /* 输出 stride (0 表示根据格式自动计算) */
+    int csc_mode;               /* 颜色空间转换模式 (CSC_RGA_CSC_*) */
+} MEDIA_CSC_RGA_ATTR;
+
+int MEDIA_CSC_RGA_CreateGrp(int grp, const MEDIA_CSC_RGA_ATTR *attr);
+int MEDIA_CSC_RGA_DestroyGrp(int grp);
+int MEDIA_CSC_RGA_Start(int grp);
+int MEDIA_CSC_RGA_Stop(int grp);
+int MEDIA_CSC_RGA_Enable(int grp);
+int MEDIA_CSC_RGA_Disable(int grp);
+int MEDIA_CSC_RGA_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_CSC_RGA_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// CSC CL (使用 OpenCL GPU 的颜色空间转换模块）
+typedef struct {
+    int input_width;            /* 输入宽度 */
+    int input_height;           /* 输入高度 */
+    int input_format;           /* 输入格式 (MEDIA_FORMAT_NV12/NV24, RGB family) */
+    int output_format;          /* 输出格式 (MEDIA_FORMAT_NV12, RGB family) */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int input_stride;           /* 输入 stride (0 表示默认=根据格式自动计算) */
+    int output_stride;          /* 输出 stride (0 表示默认=根据格式自动计算) */
+} MEDIA_CSC_CL_ATTR;
+
+typedef struct {
+    double gpu_kernel_total_ms;
+    double gpu_queue_total_ms;
+} MEDIA_CSC_CL_PERF;
+
+int MEDIA_CSC_CL_CreateGrp(int grp, const MEDIA_CSC_CL_ATTR *attr);
+int MEDIA_CSC_CL_DestroyGrp(int grp);
+int MEDIA_CSC_CL_Start(int grp);
+int MEDIA_CSC_CL_Stop(int grp);
+int MEDIA_CSC_CL_Enable(int grp);
+int MEDIA_CSC_CL_Disable(int grp);
+int MEDIA_CSC_CL_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_CSC_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_CSC_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_CSC_CL_SetMatrix(int grp, const float *matrix, int matrix_size);
+int MEDIA_CSC_CL_GetLastPerf(int grp, MEDIA_CSC_CL_PERF *perf);
+
+// CAP_DEHAZE (使用 OpenCL/CPU 的 CAP 去雾模块)
+typedef struct {
+    int width;                  /* 图像宽度 */
+    int height;                 /* 图像高度 */
+    int format;                 /* 图像格式 (MEDIA_FORMAT_RGB888, MEDIA_FORMAT_BGR888) */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int input_stride;           /* 输入 stride (0 表示默认=根据格式自动计算) */
+    int output_stride;          /* 输出 stride (0 表示默认=根据格式自动计算) */
+    int guided_radius;          /* 引导滤波半径 */
+    float guided_eps;           /* 引导滤波 epsilon */
+    float t0;                   /* 最小 transmission */
+    float beta0;                /* CAP beta0 */
+    float beta1;                /* CAP beta1 */
+    float beta2;                /* CAP beta2 */
+    float depth_scale;          /* depth 缩放 */
+    float refine_scale;         /* transmission refine 缩放（0 表示默认=0.25，1.0 表示全分辨率） */
+    int passthrough;            /* 运行时直通模式 */
+} MEDIA_CAP_DEHAZE_ATTR;
+
+int MEDIA_CAP_DEHAZE_CreateGrp(int grp, const MEDIA_CAP_DEHAZE_ATTR *attr);
+int MEDIA_CAP_DEHAZE_DestroyGrp(int grp);
+int MEDIA_CAP_DEHAZE_Start(int grp);
+int MEDIA_CAP_DEHAZE_Stop(int grp);
+int MEDIA_CAP_DEHAZE_Enable(int grp);
+int MEDIA_CAP_DEHAZE_Disable(int grp);
+int MEDIA_CAP_DEHAZE_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_CAP_DEHAZE_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_CAP_DEHAZE_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_CAP_DEHAZE_SetPassthrough(int grp, int enable);
+
+// DCP_FAST_DEHAZE (使用 OpenCL 的 DCP_FAST 去雾模块)
+typedef struct {
+    int width;                  /* 图像宽度 */
+    int height;                 /* 图像高度 */
+    int format;                 /* 图像格式 (MEDIA_FORMAT_RGB888, MEDIA_FORMAT_BGR888) */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int input_stride;           /* 输入 stride (0 表示默认=根据格式自动计算) */
+    int output_stride;          /* 输出 stride (0 表示默认=根据格式自动计算) */
+    int patch;                  /* dark channel patch 尺寸 */
+    float omega;                /* haze 保留系数 */
+    float t0;                   /* 最小 transmission */
+    float airlight_percent;     /* airlight 百分位 */
+    int guided_radius;          /* 引导滤波半径 */
+    float guided_eps;           /* 引导滤波 epsilon */
+    float refine_scale;         /* transmission refine 缩放 */
+    int passthrough;            /* 运行时直通模式 */
+} MEDIA_DCP_FAST_DEHAZE_ATTR;
+
+int MEDIA_DCP_FAST_DEHAZE_CreateGrp(int grp, const MEDIA_DCP_FAST_DEHAZE_ATTR *attr);
+int MEDIA_DCP_FAST_DEHAZE_DestroyGrp(int grp);
+int MEDIA_DCP_FAST_DEHAZE_Start(int grp);
+int MEDIA_DCP_FAST_DEHAZE_Stop(int grp);
+int MEDIA_DCP_FAST_DEHAZE_Enable(int grp);
+int MEDIA_DCP_FAST_DEHAZE_Disable(int grp);
+int MEDIA_DCP_FAST_DEHAZE_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_DCP_FAST_DEHAZE_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_DCP_FAST_DEHAZE_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_DCP_FAST_DEHAZE_SetPassthrough(int grp, int enable);
+
+// CONV_CL (使用 OpenCL GPU 的卷积模块）
+typedef struct {
+    int width;                  /* 图像宽度 */
+    int height;                 /* 图像高度 */
+    int format;                 /* 图像格式 (MEDIA_FORMAT_RGB888, MEDIA_FORMAT_RGBA8888) */
+    int kernel_size;            /* 卷积核大小 (默认=5) */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int input_stride;           /* 输入 stride (0 表示默认=根据格式自动计算) */
+    int output_stride;          /* 输出 stride (0 表示默认=根据格式自动计算) */
+} MEDIA_CONV_CL_ATTR;
+
+typedef struct {
+    double gpu_kernel_total_ms;
+    double gpu_queue_total_ms;
+} MEDIA_CONV_CL_PERF;
+
+int MEDIA_CONV_CL_CreateGrp(int grp, const MEDIA_CONV_CL_ATTR *attr);
+int MEDIA_CONV_CL_DestroyGrp(int grp);
+int MEDIA_CONV_CL_Start(int grp);
+int MEDIA_CONV_CL_Stop(int grp);
+int MEDIA_CONV_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_CONV_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_CONV_CL_SetKernelSize(int grp, int kernel_size);
+int MEDIA_CONV_CL_SetTable(int grp, const float *table, int table_size);
+int MEDIA_CONV_CL_SetPassthrough(int grp, int enable);
+int MEDIA_CONV_CL_GetLastPerf(int grp, MEDIA_CONV_CL_PERF *perf);
+
+// CLAHE (使用 OpenCL GPU 的局部对比度增强模块)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int tile_grid_x;
+    int tile_grid_y;
+    int bins;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    float clip_limit;
+    float highlight_protect_start;
+    float highlight_protect_strength;
+    int passthrough;
+} MEDIA_CLAHE_ATTR;
+
+int MEDIA_CLAHE_CreateGrp(int grp, const MEDIA_CLAHE_ATTR *attr);
+int MEDIA_CLAHE_DestroyGrp(int grp);
+int MEDIA_CLAHE_Start(int grp);
+int MEDIA_CLAHE_Stop(int grp);
+int MEDIA_CLAHE_Enable(int grp);
+int MEDIA_CLAHE_Disable(int grp);
+int MEDIA_CLAHE_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_CLAHE_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_CLAHE_SetClipLimit(int grp, float clip_limit);
+int MEDIA_CLAHE_SetHighlightProtect(int grp, float start, float strength);
+int MEDIA_CLAHE_SetPassthrough(int grp, int enable);
+
+// EIS (纯图像电子稳像模块，第一版自计算平移补偿矩阵)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    float crop_ratio;
+    int smoothing_window;
+    int estimate_width;
+    int search_radius;
+    int block_step;
+    int passthrough;
+} MEDIA_EIS_ATTR;
+
+typedef struct {
+    int frame_index;
+    int fallback_used;
+    int fallback_reason;
+    float raw_dx;
+    float raw_dy;
+    float raw_angle;
+    float smooth_dx;
+    float smooth_dy;
+    float smooth_angle;
+    float comp_dx;
+    float comp_dy;
+    float comp_angle;
+    float matrix[6];
+    double estimate_ms;
+    double warp_ms;
+    double total_ms;
+    int warp_path; /* 0=cpu, 1=rga, 2=opencl */
+    int estimate_path; /* 0=cpu, 1=opencl */
+    double estimate_kernel_ms;
+} MEDIA_EIS_STATS;
+
+int MEDIA_EIS_CreateGrp(int grp, const MEDIA_EIS_ATTR *attr);
+int MEDIA_EIS_DestroyGrp(int grp);
+int MEDIA_EIS_Start(int grp);
+int MEDIA_EIS_Stop(int grp);
+int MEDIA_EIS_Enable(int grp);
+int MEDIA_EIS_Disable(int grp);
+int MEDIA_EIS_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_EIS_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_EIS_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_EIS_SetPassthrough(int grp, int enable);
+int MEDIA_EIS_GetStats(int grp, MEDIA_EIS_STATS *stats);
+
+// TNR_CL (使用 OpenCL GPU 的 NV12 时域降噪模块)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int block_size;
+    float threshold;
+    float static_alpha;
+    float motion_alpha;
+    int passthrough;
+} MEDIA_TNR_CL_ATTR;
+
+typedef struct {
+    double gpu_motion_ms;
+    double gpu_blend_ms;
+    double gpu_queue_total_ms;
+    int has_prev;
+} MEDIA_TNR_CL_PERF;
+
+int MEDIA_TNR_CL_CreateGrp(int grp, const MEDIA_TNR_CL_ATTR *attr);
+int MEDIA_TNR_CL_DestroyGrp(int grp);
+int MEDIA_TNR_CL_Start(int grp);
+int MEDIA_TNR_CL_Stop(int grp);
+int MEDIA_TNR_CL_Enable(int grp);
+int MEDIA_TNR_CL_Disable(int grp);
+int MEDIA_TNR_CL_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_TNR_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_TNR_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_TNR_CL_SetPassthrough(int grp, int enable);
+int MEDIA_TNR_CL_SetThreshold(int grp, float threshold);
+int MEDIA_TNR_CL_SetThresholdRange(int grp, float threshold_low, float threshold_high);
+int MEDIA_TNR_CL_SetStaticAlpha(int grp, float alpha);
+int MEDIA_TNR_CL_SetMotionAlpha(int grp, float alpha);
+int MEDIA_TNR_CL_SetSpatialStrength(int grp, float strength);
+int MEDIA_TNR_CL_GetLastPerf(int grp, MEDIA_TNR_CL_PERF *perf);
+
+// HIGHLIGHT_SUPPRESS (NV12 高光软压制模块)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    float threshold_low;
+    float threshold_high;
+    float knee;
+    float ratio;
+    float strength;
+    float chroma_low;
+    float chroma_high;
+    int passthrough;
+} MEDIA_HIGHLIGHT_SUPPRESS_ATTR;
+
+typedef struct {
+    double cpu_ms;
+    double gpu_kernel_ms;
+    double gpu_queue_ms;
+    int gpu_enabled;
+} MEDIA_HIGHLIGHT_SUPPRESS_PERF;
+
+int MEDIA_HIGHLIGHT_SUPPRESS_CreateGrp(int grp, const MEDIA_HIGHLIGHT_SUPPRESS_ATTR *attr);
+int MEDIA_HIGHLIGHT_SUPPRESS_DestroyGrp(int grp);
+int MEDIA_HIGHLIGHT_SUPPRESS_Start(int grp);
+int MEDIA_HIGHLIGHT_SUPPRESS_Stop(int grp);
+int MEDIA_HIGHLIGHT_SUPPRESS_Enable(int grp);
+int MEDIA_HIGHLIGHT_SUPPRESS_Disable(int grp);
+int MEDIA_HIGHLIGHT_SUPPRESS_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_HIGHLIGHT_SUPPRESS_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_HIGHLIGHT_SUPPRESS_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_HIGHLIGHT_SUPPRESS_SetPassthrough(int grp, int enable);
+int MEDIA_HIGHLIGHT_SUPPRESS_SetStrength(int grp, float strength);
+int MEDIA_HIGHLIGHT_SUPPRESS_SetKnee(int grp, float knee);
+int MEDIA_HIGHLIGHT_SUPPRESS_GetLastPerf(int grp, MEDIA_HIGHLIGHT_SUPPRESS_PERF *perf);
+
+// WAVELET_NR_CL (NV12 GPU 小波空间降噪模块)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int levels;
+    float threshold_y;
+    float strength;
+    int uv_enable;
+    float uv_strength;
+    int passthrough;
+} MEDIA_WAVELET_NR_CL_ATTR;
+
+typedef struct {
+    double cpu_ms;
+    double gpu_kernel_ms;
+    double gpu_queue_ms;
+    int gpu_enabled;
+} MEDIA_WAVELET_NR_CL_PERF;
+
+int MEDIA_WAVELET_NR_CL_CreateGrp(int grp, const MEDIA_WAVELET_NR_CL_ATTR *attr);
+int MEDIA_WAVELET_NR_CL_DestroyGrp(int grp);
+int MEDIA_WAVELET_NR_CL_Start(int grp);
+int MEDIA_WAVELET_NR_CL_Stop(int grp);
+int MEDIA_WAVELET_NR_CL_Enable(int grp);
+int MEDIA_WAVELET_NR_CL_Disable(int grp);
+int MEDIA_WAVELET_NR_CL_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_WAVELET_NR_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_WAVELET_NR_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_WAVELET_NR_CL_SetPassthrough(int grp, int enable);
+int MEDIA_WAVELET_NR_CL_SetLevels(int grp, int levels);
+int MEDIA_WAVELET_NR_CL_SetThresholdY(int grp, float threshold_y);
+int MEDIA_WAVELET_NR_CL_SetStrength(int grp, float strength);
+int MEDIA_WAVELET_NR_CL_SetUvEnable(int grp, int enable);
+int MEDIA_WAVELET_NR_CL_SetUvStrength(int grp, float strength);
+int MEDIA_WAVELET_NR_CL_GetLastPerf(int grp, MEDIA_WAVELET_NR_CL_PERF *perf);
+
+// EDOF_CL (使用 OpenCL GPU 的双输入扩景深融合模块)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int focus_radius;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    float score_eps;
+} MEDIA_EDOF_CL_ATTR;
+
+typedef struct {
+    double gpu_kernel_total_ms;
+    double gpu_queue_total_ms;
+} MEDIA_EDOF_CL_PERF;
+
+int MEDIA_EDOF_CL_CreateGrp(int grp, const MEDIA_EDOF_CL_ATTR *attr);
+int MEDIA_EDOF_CL_DestroyGrp(int grp);
+int MEDIA_EDOF_CL_Start(int grp);
+int MEDIA_EDOF_CL_Stop(int grp);
+int MEDIA_EDOF_CL_Enable(int grp);
+int MEDIA_EDOF_CL_Disable(int grp);
+int MEDIA_EDOF_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_EDOF_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_EDOF_CL_SetAffineWarp(int grp, float matrix[6]);
+int MEDIA_EDOF_CL_GetLastPerf(int grp, MEDIA_EDOF_CL_PERF *perf);
+
+typedef enum {
+    MEDIA_STEREO_3D_MODE_SIDE_BY_SIDE = 0,
+    MEDIA_STEREO_3D_MODE_LINE_BY_LINE = 1,
+} MEDIA_STEREO_3D_MODE;
+
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int mode;
+    int rotate_input;
+    float rotation_degrees;
+} MEDIA_STEREO_3D_ATTR;
+
+int MEDIA_STEREO_3D_CreateGrp(int grp, const MEDIA_STEREO_3D_ATTR *attr);
+int MEDIA_STEREO_3D_DestroyGrp(int grp);
+int MEDIA_STEREO_3D_Start(int grp);
+int MEDIA_STEREO_3D_Stop(int grp);
+int MEDIA_STEREO_3D_Enable(int grp);
+int MEDIA_STEREO_3D_Disable(int grp);
+int MEDIA_STEREO_3D_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_STEREO_3D_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_STEREO_3D_SetRotation(int grp, float rotation_degrees);
+
+// EXPOSURE_FUSION_CL (OpenCL GPU dual-input exposure fusion, conservative realtime route)
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    float contrast_power;
+    float saturation_power;
+    float exposedness_power;
+    float sigma;
+    float epsilon;
+} MEDIA_EXPOSURE_FUSION_CL_ATTR;
+
+int MEDIA_EXPOSURE_FUSION_CL_CreateGrp(int grp, const MEDIA_EXPOSURE_FUSION_CL_ATTR *attr);
+int MEDIA_EXPOSURE_FUSION_CL_DestroyGrp(int grp);
+int MEDIA_EXPOSURE_FUSION_CL_Start(int grp);
+int MEDIA_EXPOSURE_FUSION_CL_Stop(int grp);
+int MEDIA_EXPOSURE_FUSION_CL_Enable(int grp);
+int MEDIA_EXPOSURE_FUSION_CL_Disable(int grp);
+int MEDIA_EXPOSURE_FUSION_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_EXPOSURE_FUSION_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// MCF_FUSION_CL (OpenCL GPU RGB/mono detail injection; no histogram matching)
+typedef enum {
+    MEDIA_MCF_FUSION_CL_PATH_FUSION = 0,
+    MEDIA_MCF_FUSION_CL_PATH_COLOR = 1,
+    MEDIA_MCF_FUSION_CL_PATH_MONO = 2,
+} MEDIA_MCF_FUSION_CL_PATH;
+
+typedef enum {
+    MEDIA_MCF_FUSION_CL_NORMALIZE_NONE = 0,
+    MEDIA_MCF_FUSION_CL_NORMALIZE_MEAN_STD = 1,
+} MEDIA_MCF_FUSION_CL_NORMALIZE_MODE;
+
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int path;
+    int normalize_mode;
+    int blur_radius;
+    float base_alpha;
+    float detail_gain;
+    float alpha_min;
+    float alpha_max;
+    float gain_min;
+    float gain_max;
+    float epsilon;
+} MEDIA_MCF_FUSION_CL_ATTR;
+
+typedef struct {
+    double stats_kernel_ms;
+    double fusion_kernel_ms;
+    double gpu_total_ms;
+} MEDIA_MCF_FUSION_CL_PERF;
+
+int MEDIA_MCF_FUSION_CL_CreateGrp(int grp, const MEDIA_MCF_FUSION_CL_ATTR *attr);
+int MEDIA_MCF_FUSION_CL_DestroyGrp(int grp);
+int MEDIA_MCF_FUSION_CL_Start(int grp);
+int MEDIA_MCF_FUSION_CL_Stop(int grp);
+int MEDIA_MCF_FUSION_CL_Enable(int grp);
+int MEDIA_MCF_FUSION_CL_Disable(int grp);
+int MEDIA_MCF_FUSION_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_MCF_FUSION_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_MCF_FUSION_CL_GetLastPerf(int grp, MEDIA_MCF_FUSION_CL_PERF *perf);
+
+// THERMAL_LOWLIGHT_FUSION_CL (OpenCL GPU thermal + lowlight NV12 fusion)
+typedef enum {
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_MODE_GRAY = 0,
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_MODE_HOT_OVERLAY = 1,
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_MODE_BLACK_RED =
+        MEDIA_THERMAL_LOWLIGHT_FUSION_CL_MODE_HOT_OVERLAY,
+} MEDIA_THERMAL_LOWLIGHT_FUSION_CL_MODE;
+
+typedef enum {
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_ALGO_PYRAMID = 0,
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_ALGO_TIF = 1, // deprecated, rejected by this module
+} MEDIA_THERMAL_LOWLIGHT_FUSION_CL_ALGO;
+
+typedef enum {
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_INPUT_THERMAL = 0,
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_INPUT_LOWLIGHT = 1,
+} MEDIA_THERMAL_LOWLIGHT_FUSION_CL_INPUT;
+
+typedef enum {
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_LUMA_LOWLIGHT = 0,
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_LUMA_THERMAL_DETAIL = 1,
+} MEDIA_THERMAL_LOWLIGHT_FUSION_CL_LUMA_MODE;
+
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int mode;
+    float thermal_weight;
+    float hot_threshold;
+    float hot_soft_width;
+    float overlay_alpha;
+    int pyramid_levels;  // deprecated, kept for ABI/source compatibility
+    int algo;            // 0 = current thermal-detail path, 1 = deprecated/rejected TIF
+    int tif_base_radius; // deprecated, kept for ABI/source compatibility
+    int luma_mode;       // 0 = lowlight Y, 1 = lowlight Y plus local thermal detail
+    float detail_gain;      // 0 = default; recommended range (0, 1]
+    float detail_threshold; // 0 = default normalized thermal detail threshold
+    float max_luma_delta;   // 0 = default max absolute Y delta injected from thermal detail
+    int detail_base_radius; // 0 = default; valid explicit range 1..32
+} MEDIA_THERMAL_LOWLIGHT_FUSION_CL_ATTR;
+
+typedef struct {
+    double y_kernel_ms;
+    double uv_kernel_ms;
+    double gpu_total_ms;
+} MEDIA_THERMAL_LOWLIGHT_FUSION_CL_PERF;
+
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_CreateGrp(
+    int grp,
+    const MEDIA_THERMAL_LOWLIGHT_FUSION_CL_ATTR *attr);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_DestroyGrp(int grp);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_Start(int grp);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_Stop(int grp);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_Enable(int grp);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_Disable(int grp);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_SendFrame(
+    int grp,
+    int input_id,
+    MEDIA_BUFFER buf,
+    int timeout_ms);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_THERMAL_LOWLIGHT_FUSION_CL_GetLastPerf(
+    int grp,
+    MEDIA_THERMAL_LOWLIGHT_FUSION_CL_PERF *perf);
+
+// FLUO_VISIBLE_FUSION_CL (OpenCL GPU fluorescence + visible NV12 fusion)
+typedef enum {
+    MEDIA_FLUO_VISIBLE_FUSION_CL_METHOD_GREEN_OVERLAY = 0,
+    MEDIA_FLUO_VISIBLE_FUSION_CL_METHOD_CYAN_OVERLAY = 1,
+    MEDIA_FLUO_VISIBLE_FUSION_CL_METHOD_HOT_OVERLAY = 2,
+} MEDIA_FLUO_VISIBLE_FUSION_CL_METHOD;
+
+typedef enum {
+    MEDIA_FLUO_VISIBLE_FUSION_CL_INPUT_VISIBLE = 0,
+    MEDIA_FLUO_VISIBLE_FUSION_CL_INPUT_FLUORESCENCE = 1,
+} MEDIA_FLUO_VISIBLE_FUSION_CL_INPUT;
+
+typedef struct {
+    int width;
+    int height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int method;           // MEDIA_FLUO_VISIBLE_FUSION_CL_METHOD_*
+    float thr_lo;         // 0 = default 0.20
+    float thr_hi;         // 0 = default 0.65
+    float overlay_alpha;  // 0 = default 0.72
+    float y_boost;        // 0 = default 1.15
+} MEDIA_FLUO_VISIBLE_FUSION_CL_ATTR;
+
+typedef struct {
+    double kernel_ms;
+    double gpu_total_ms;
+} MEDIA_FLUO_VISIBLE_FUSION_CL_PERF;
+
+int MEDIA_FLUO_VISIBLE_FUSION_CL_CreateGrp(int grp, const MEDIA_FLUO_VISIBLE_FUSION_CL_ATTR *attr);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_DestroyGrp(int grp);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_Start(int grp);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_Stop(int grp);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_Enable(int grp);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_Disable(int grp);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_SendFrame(int grp, int input_id, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_FLUO_VISIBLE_FUSION_CL_GetLastPerf(int grp, MEDIA_FLUO_VISIBLE_FUSION_CL_PERF *perf);
+
+// OSD (干净的多 region overlay 模块)
+#define MEDIA_OSD_CONTENT_NONE     0
+#define MEDIA_OSD_CONTENT_RECT     1
+#define MEDIA_OSD_CONTENT_A8_MASK  2
+#define MEDIA_OSD_CONTENT_ARGB8888 3
+#define MEDIA_OSD_MAX_REGIONS      64
+
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+} MEDIA_OSD_COLOR;
+
+typedef struct {
+    int enabled;
+    int x;
+    int y;
+    int width;
+    int height;
+    uint8_t global_alpha; /* later region_id covers earlier when overlapping */
+    int zorder; /* retained for source compatibility; ignored by current OSD module */
+} MEDIA_OSD_REGION_ATTR;
+
+typedef struct {
+    int filled;
+    int line_width;
+    MEDIA_OSD_COLOR color;
+} MEDIA_OSD_RECT_DESC;
+
+typedef struct {
+    int width;
+    int height;
+    int stride;
+    const uint8_t *data;
+    size_t data_size;
+    MEDIA_OSD_COLOR color;
+} MEDIA_OSD_MASK_DESC;
+
+typedef struct {
+    int input_width;
+    int input_height;
+    int format;
+    int input_depth;
+    int output_pool_id;
+    int input_stride;
+    int output_stride;
+    int max_regions;
+} MEDIA_OSD_ATTR;
+
+int MEDIA_OSD_CreateGrp(int grp, const MEDIA_OSD_ATTR *attr);
+int MEDIA_OSD_DestroyGrp(int grp);
+int MEDIA_OSD_Start(int grp);
+int MEDIA_OSD_Stop(int grp);
+int MEDIA_OSD_Enable(int grp);
+int MEDIA_OSD_Disable(int grp);
+int MEDIA_OSD_SendFrame(int grp, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_OSD_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_OSD_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_OSD_UpdateRegion(int grp, int region_id, const MEDIA_OSD_REGION_ATTR *attr);
+int MEDIA_OSD_SetRegionRect(int grp, int region_id, const MEDIA_OSD_RECT_DESC *rect);
+int MEDIA_OSD_SetRegionMask(int grp, int region_id, const MEDIA_OSD_MASK_DESC *mask);
+
+// VMix RGA (使用 RGA 硬件的视频合成模块）
+#define MEDIA_VMIX_RGA_MAX_INPUTS 16
+
+/* VMix RGA 通道配置 */
+typedef struct {
+    int enabled;                /* 是否启用该通道 */
+    int x;                      /* X 坐标偏移 */
+    int y;                      /* Y 坐标偏移 */
+    int width;                  /* 目标宽度 (0 表示不缩放) */
+    int height;                 /* 目标高度 (0 表示不缩放) */
+    int stride;                 /* 输入 stride (0 表示默认=width) */
+    int format;                 /* 输入格式 (MEDIA_FORMAT_NV12, MEDIA_FORMAT_RGB888, MEDIA_FORMAT_RGBA8888)，-1 表示使用全局格式 */
+} MEDIA_VMIX_RGA_CHANNEL;
+
+/* VMix RGA 属性 */
+typedef struct {
+    MEDIA_VMIX_RGA_CHANNEL channels[MEDIA_VMIX_RGA_MAX_INPUTS];  /* 通道配置 */
+    int input_count;            /* 输入通道数 (1-16) */
+    int output_width;           /* 输出宽度 */
+    int output_height;          /* 输出高度 */
+    int format;                 /* 格式 */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int output_stride;          /* 输出 stride (0 表示默认=output_width) */
+    int primary_index;          /* 主输入索引 (-1 表示自动选择第一个启用的通道) */
+    int use_rga_compose;        /* 使用 RGA compose 算法 (0=逐个 blit, 1=使用 imcomposite) */
+} MEDIA_VMIX_RGA_ATTR;
+
+int MEDIA_VMIX_RGA_CreateGrp(int grp, const MEDIA_VMIX_RGA_ATTR *attr);
+int MEDIA_VMIX_RGA_DestroyGrp(int grp);
+int MEDIA_VMIX_RGA_Start(int grp);
+int MEDIA_VMIX_RGA_Stop(int grp);
+int MEDIA_VMIX_RGA_Enable(int grp);
+int MEDIA_VMIX_RGA_Disable(int grp);
+int MEDIA_VMIX_RGA_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VMIX_RGA_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// Resize RGA (使用 RGA 硬件的缩放模块）
+/* Resize RGA 属性 */
+typedef struct {
+    // 输入参数
+    int src_x;                  /* 源图像 X 坐标裁剪起点 */
+    int src_y;                  /* 源图像 Y 坐标裁剪起点 */
+    int src_width;              /* 源图像裁剪宽度 (0 表示使用输入端口宽度) */
+    int src_height;             /* 源图像裁剪高度 (0 表示使用输入端口高度) */
+    int input_width;            /* 输入图像宽度 (0 表示按 crop 区域兼容推导) */
+    int input_height;           /* 输入图像高度 (0 表示按 crop 区域兼容推导) */
+    int input_stride;           /* 输入 stride (0 表示默认=width) */
+    int input_format;           /* 输入格式 (MEDIA_FORMAT_NV12, MEDIA_FORMAT_RGB888, MEDIA_FORMAT_RGBA8888) */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+
+    // 输出参数
+    int out_width;              /* 输出宽度 */
+    int out_height;             /* 输出高度 */
+    int out_stride;             /* 输出 stride (0 表示默认=out_width) */
+    int output_format;          /* 输出格式 (MEDIA_FORMAT_NV12, MEDIA_FORMAT_RGB888, MEDIA_FORMAT_RGBA8888) */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+    int keep_aspect_ratio;      /* 1=按比例缩放并在输出内居中填黑，0=拉伸到整幅输出 */
+} MEDIA_RESIZE_RGA_ATTR;
+
+int MEDIA_RESIZE_RGA_CreateGrp(int grp, const MEDIA_RESIZE_RGA_ATTR *attr);
+int MEDIA_RESIZE_RGA_DestroyGrp(int grp);
+int MEDIA_RESIZE_RGA_Start(int grp);
+int MEDIA_RESIZE_RGA_Stop(int grp);
+int MEDIA_RESIZE_RGA_Enable(int grp);
+int MEDIA_RESIZE_RGA_Disable(int grp);
+int MEDIA_RESIZE_RGA_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_RESIZE_RGA_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// DualView (双摄图像合并模块）
+typedef enum {
+    MEDIA_DUALVIEW_MODE_SIDE_BY_SIDE = 0,   /* 并排显示 (左右) */
+    MEDIA_DUALVIEW_MODE_LINE_BY_LINE = 1,    /* 逐行交错 */
+} MEDIA_DUALVIEW_MODE;
+
+/* DualView 输入通道配置 */
+typedef struct {
+    int enabled;        /* 是否启用该路输入 */
+    int x;              /* 输出 X 坐标偏移 (side by side 模式使用) */
+    int y;              /* 输出 Y 坐标偏移 */
+    int width;          /* 输出宽度 (0 表示使用输入宽度) */
+    int height;         /* 输出高度 (0 表示使用输入高度) */
+    int stride;         /* 输入 stride (0 表示使用 width*3) */
+} MEDIA_DUALVIEW_INPUT;
+
+typedef struct {
+    MEDIA_DUALVIEW_INPUT inputs[2];  /* 两路输入配置 */
+    int input_width;            /* 输入宽度 */
+    int input_height;           /* 输入高度 */
+    int input_stride;           /* 输入 stride (0 表示 width*3) */
+    int output_width;           /* 输出宽度（<=0 表示按模式自动） */
+    int output_height;          /* 输出高度（<=0 表示按模式自动） */
+    int output_stride;          /* 输出 stride (0 表示 width*3) */
+    int mode;                   /* 合并模式（MEDIA_DUALVIEW_MODE） */
+    int format;                 /* 格式（MEDIA_FORMAT_RGB888） */
+    int input_depth;            /* 输入端口队列深度（0 表示默认=4） */
+    int output_pool_id;         /* 输出 buffer 池 ID */
+} MEDIA_DUALVIEW_ATTR;
+
+int MEDIA_DUALVIEW_CreateGrp(int grp, const MEDIA_DUALVIEW_ATTR *attr);
+int MEDIA_DUALVIEW_DestroyGrp(int grp);
+int MEDIA_DUALVIEW_Start(int grp);
+int MEDIA_DUALVIEW_Stop(int grp);
+int MEDIA_DUALVIEW_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_DUALVIEW_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// Transform (基于 LUT 的 XY 变换模块，支持 NV12 与 RGB/BGR/RGBA family 同格式 remap）
+typedef struct {
+    int out_width;           // 输出分辨率宽
+    int out_height;          // 输出分辨率高
+    int out_stride;          // 输出 stride 字节数（0=按格式自动计算并 4 字节对齐）
+    int format;              // 输入/输出格式（NV12/RGB888/BGR888/RGBA8888/BGRA8888/ARGB8888/ABGR8888）
+    int input_depth;         // 输入端口队列深度（0 表示默认=4）
+    int pool_id;             // 输出缓冲池 ID
+    int in_width;            // 输入分辨率宽（旋转等变换时与输出不同，0=等于 out_width）
+    int in_height;           // 输入分辨率高（旋转等变换时与输出不同，0=等于 out_height）
+    int in_stride;           // 输入 stride 字节数（0=按格式自动计算并 4 字节对齐）
+    int lut_width;           // LUT 宽度（0=等于 out_width，可小于 out_width 实现下采样节省内存）
+    int lut_height;          // LUT 高度（0=等于 out_height，可小于 out_height 实现下采样节省内存）
+    const float *lut;        // 预计算的 LUT（大小为 lut_width*lut_height*2）
+    size_t lut_size;         // LUT 大小（字节）
+} MEDIA_TRANSFORM_ATTR;
+
+int MEDIA_TRANSFORM_CreateGrp(int grp, const MEDIA_TRANSFORM_ATTR *attr);
+int MEDIA_TRANSFORM_DestroyGrp(int grp);
+int MEDIA_TRANSFORM_Start(int grp);
+int MEDIA_TRANSFORM_Stop(int grp);
+int MEDIA_TRANSFORM_Process(int grp, MEDIA_BUFFER input, MEDIA_BUFFER *output);
+int MEDIA_TRANSFORM_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_TRANSFORM_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_TRANSFORM_UpdateLut(int grp, const float *lut, size_t lut_size);
+
+// Panorama stitch (online multi-input module, PTO-only)
+#define MEDIA_PANO_MAX_INPUTS 8
+typedef struct {
+    int input_count; // 2..8
+    int in_width;
+    int in_height;
+    int in_stride;   // 输入 NV12 stride（0=默认=in_width）
+    int out_width;
+    int out_height;  // NV12 needs even height; odd will be rounded up internally
+    int out_stride;  // 输出 NV12 stride（0=默认按内部对齐）
+    int crop_enable; // 1=启用 PTO 全景域裁剪窗口映射到输出（crop_rect -> out_size）
+    int crop_x;      // 裁剪窗口左上角 X（PTO 全景域坐标）
+    int crop_y;      // 裁剪窗口左上角 Y（PTO 全景域坐标）
+    int crop_width;  // 裁剪窗口宽（PTO 全景域尺寸，0=默认域剩余宽度）
+    int crop_height; // 裁剪窗口高（PTO 全景域尺寸，0=默认域剩余高度）
+    int output_pool_id; // 在线模块输出 buffer 池 ID（离线路径忽略）
+    int input_depth;    // 输入端口队列深度（0=默认）
+    int output_depth;   // 输出端口队列深度（0=默认）
+    int sync_timeout_ms; // 多路聚合同步超时（<=0 使用默认）
+    int lut_width;      // LUT 宽度（0=默认使用 out_width；crop+pto 自动模式下默认使用 PTO 全景宽）
+    int lut_height;     // LUT 高度（0=默认使用 out_height；crop+pto 自动模式下默认使用 PTO 全景高）
+    const char *pto_path; // required: calibration file path (.pto/.pts), used to build LUT and stitch
+    int gain_y_enable;  // 1=启用 Y 亮度增益补偿（仅 Y，不调 UV）；0=关闭（默认）
+    uint16_t gain_y_q8[MEDIA_PANO_MAX_INPUTS]; // Q8.8, 256=1.0; 0=默认 256，有效范围 1..1024
+    /*
+     * 多路输入聚合策略（仅 CreateGrpEx 且 attr_size 覆盖到本字段时生效；否则默认 0）：
+     * 0 = 不等待其它路：触发路到达后立刻拼接，其它路用当前已入队最新帧，否则 last_frame
+     * 1 = 等待其它路：对其它 input 阻塞等待，最长 sync_timeout_ms，超时再用 last_frame
+     */
+    int sync_wait_inputs;
+} MEDIA_PANO_ATTR;
+
+int MEDIA_PANO_CreateGrp(int grp, const MEDIA_PANO_ATTR *attr);
+int MEDIA_PANO_CreateGrpEx(int grp, const MEDIA_PANO_ATTR *attr, size_t attr_size);
+int MEDIA_PANO_DestroyGrp(int grp);
+int MEDIA_PANO_Start(int grp);
+int MEDIA_PANO_Stop(int grp);
+int MEDIA_PANO_Enable(int grp);
+int MEDIA_PANO_Disable(int grp);
+int MEDIA_PANO_SetCrop(int grp, int crop_x, int crop_y); // runtime update crop origin (keeps crop_width/height)
+int MEDIA_PANO_SendFrame(int grp, int input_id, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_PANO_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_PANO_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// AVM 2D runtime (online multi-input module, precomputed LUT-only)
+typedef struct {
+    int input_count;       // 2..8, typical AVM uses 4
+    int in_width;
+    int in_height;
+    int in_stride;         // input NV12 stride (0 = in_width)
+    int out_width;
+    int out_height;
+    int out_stride;        // output NV12 stride (0 = backend default)
+    int output_pool_id;    // required output pool id
+    int input_depth;       // input queue depth (0 = default)
+    int output_depth;      // reserved for symmetry
+    int sync_timeout_ms;   // multi-input sync timeout (<=0 uses default)
+    int lut_width;         // LUT width (0 = out_width)
+    int lut_height;        // LUT height (0 = out_height)
+    const char *lut_path;  // required precomputed LUT file
+    /*
+     * 多路输入聚合策略（仅 CreateGrpEx 且 attr_size 覆盖到本字段时生效；否则默认 0）：
+     * 0 = 不等待其它路：触发路到达后立刻拼接，其它路用当前已入队最新帧，否则 last_frame
+     * 1 = 等待其它路：对其它 input 阻塞等待，最长 sync_timeout_ms，超时再用 last_frame
+     */
+    int sync_wait_inputs;
+} MEDIA_AVM_ATTR;
+
+int MEDIA_AVM_CreateGrp(int grp, const MEDIA_AVM_ATTR *attr);
+int MEDIA_AVM_CreateGrpEx(int grp, const MEDIA_AVM_ATTR *attr, size_t attr_size);
+int MEDIA_AVM_DestroyGrp(int grp);
+int MEDIA_AVM_Start(int grp);
+int MEDIA_AVM_Stop(int grp);
+int MEDIA_AVM_Enable(int grp);
+int MEDIA_AVM_Disable(int grp);
+int MEDIA_AVM_SendFrame(int grp, int input_id, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_AVM_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_AVM_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+
+// SVM 3D runtime (online multi-input module, external mesh/mask asset manifest)
+typedef struct {
+    int input_count;       // 2..8, typical surround-view pipeline uses 4
+    int input_format;      // MEDIA_FORMAT_NV12 or RGB/BGR/RGBA/BGRA/ARGB/ABGR input
+    int in_width;
+    int in_height;
+    int in_stride;         // input stride (0 = format default)
+    int output_format;     // RGB-family 4-byte output: RGBA/BGRA/ARGB/ABGR; 3-byte output is rejected to avoid CPU readback/pack
+    int out_width;
+    int out_height;
+    int out_stride;        // output stride (0 = format default)
+    int output_pool_id;    // required output0 pool id
+    int top_output_enable; // 0 = output0 only, non-zero = also create output1 top-down view
+    int top_output_pool_id; // required when top_output_enable != 0
+    int input_depth;       // input queue depth (0 = default)
+    int output_depth;      // reserved for symmetry
+    int sync_timeout_ms;   // multi-input sync timeout (<=0 uses default)
+    const char *asset_path; // required svm_3d asset manifest path
+    /*
+     * 多路输入聚合策略（仅 CreateGrpEx 且 attr_size 覆盖到本字段时生效；否则默认 0）：
+     * 0 = 不等待其它路：触发路到达后立刻渲染，其它路用当前已入队最新帧，否则 last_frame
+     * 1 = 等待其它路：对其它 input 阻塞等待，最长 sync_timeout_ms，超时再用 last_frame
+     */
+    int sync_wait_inputs;
+} MEDIA_SVM3D_ATTR;
+
+typedef struct {
+    float yaw_deg;
+    float pitch_deg;
+    float distance_m;
+    float target_z_m;
+    float fov_y_deg;
+} MEDIA_SVM3D_VIEW_ATTR;
+
+int MEDIA_SVM3D_CreateGrp(int grp, const MEDIA_SVM3D_ATTR *attr);
+int MEDIA_SVM3D_CreateGrpEx(int grp, const MEDIA_SVM3D_ATTR *attr, size_t attr_size);
+int MEDIA_SVM3D_DestroyGrp(int grp);
+int MEDIA_SVM3D_Start(int grp);
+int MEDIA_SVM3D_Stop(int grp);
+int MEDIA_SVM3D_Enable(int grp);
+int MEDIA_SVM3D_Disable(int grp);
+int MEDIA_SVM3D_SendFrame(int grp, int input_id, MEDIA_BUFFER buf, int timeout_ms);
+int MEDIA_SVM3D_GetFrame(int grp, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_SVM3D_GetFrameEx(int grp, int output_id, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_SVM3D_ReleaseFrame(int grp, MEDIA_BUFFER buf);
+int MEDIA_SVM3D_SetView(int grp, const MEDIA_SVM3D_VIEW_ATTR *attr);
+int MEDIA_SVM3D_GetView(int grp, MEDIA_SVM3D_VIEW_ATTR *attr);
+int MEDIA_SVM3D_SetViewEx(int grp, int output_id, const MEDIA_SVM3D_VIEW_ATTR *attr);
+int MEDIA_SVM3D_GetViewEx(int grp, int output_id, MEDIA_SVM3D_VIEW_ATTR *attr);
+
+// PIC_SEND (image folder -> video stream)
+int MEDIA_PIC_SEND_SetAttr(int chn, const MEDIA_PIC_SEND_ATTR *attr);
+int MEDIA_PIC_SEND_Enable(int chn);
+int MEDIA_PIC_SEND_Disable(int chn);
+
+// PIC_REV (video stream -> image folder)
+int MEDIA_PIC_REV_SetAttr(int chn, const MEDIA_PIC_REV_ATTR *attr);
+int MEDIA_PIC_REV_Enable(int chn);
+int MEDIA_PIC_REV_Disable(int chn);
+
+
+
+// VO
+typedef enum {
+    MEDIA_VO_INTF_HDMI = 0,
+    MEDIA_VO_INTF_DP = 1,
+    MEDIA_VO_INTF_EDP = 2,
+    MEDIA_VO_INTF_MIPI = 3,
+} MEDIA_VO_INTF;
+
+typedef enum {
+    MEDIA_VO_PLANE_TYPE_AUTO = 0,     // 自动选择 (overlay 优先，无 overlay 则用 primary)
+    MEDIA_VO_PLANE_TYPE_OVERLAY = 1,  // 必须是 overlay plane
+    MEDIA_VO_PLANE_TYPE_PRIMARY = 2,  // 必须是 primary plane
+} MEDIA_VO_PLANE_TYPE;
+
+typedef struct {
+    MEDIA_VO_INTF intf;
+    int width;
+    int height;
+    int plane_count;
+} MEDIA_VO_ATTR;
+
+typedef struct {
+    const char *device;     // DRM card，NULL 表示 /dev/dri/card0
+    const char *target;     // 显示 connector 名称，如 DSI-1 / HDMI-A-1；NULL 表示自动找 active CRTC
+    int width;              // 抓取宽度按格式对齐：ARGB8888/AR24 16 像素，NV12/BGR888 64 像素
+    int height;             // 抓取高度，VO_WBC 不额外对齐
+    int stride;             // bytesperline，<=0 自动；显式配置必须匹配 width/format
+    int fps;                // <=0 不做帧率限制
+    int format;             // MEDIA_FORMAT_NV12 / BGR888 / ARGB8888
+    int pool_id;            // 输出 pool id
+    int output_depth;       // 输出端口队列深度，<=0 默认 4
+} MEDIA_VO_WBC_ATTR;
+
+int MEDIA_VO_SetAttr(int output_id, const MEDIA_VO_ATTR *attr);
+int MEDIA_VO_GetOutput(int output_id, MEDIA_VO_INTF *intf, int *width, int *height, int *plane_count);
+int MEDIA_VO_CreateChn(int output_id, int chn, int x, int y, int width, int height, int stride, int depth,
+                       MEDIA_VO_PLANE_TYPE plane_type, int format, int force_plane);
+int MEDIA_VO_DestroyChn(int output_id, int chn);
+int MEDIA_VO_Start(int output_id, int chn);
+int MEDIA_VO_Stop(int output_id, int chn);
+int MEDIA_VO_GetFrame(int output_id, int chn, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VO_ReleaseFrame(int output_id, int chn, MEDIA_BUFFER buf);
+int MEDIA_VO_FreezeMain(int freeze);
+int MEDIA_VO_UnfreezeMain(void);
+int MEDIA_VO_FreezePlane(int output_id, int plane_id, int freeze);
+int MEDIA_VO_HidePlane(int output_id, int plane_id, int hide);
+
+int MEDIA_VO_WBC_Probe(const char *device, int *connector_id, int *crtc_id);
+int MEDIA_VO_WBC_CreateChn(int chn, const MEDIA_VO_WBC_ATTR *attr);
+int MEDIA_VO_WBC_DestroyChn(int chn);
+int MEDIA_VO_WBC_Start(int chn);
+int MEDIA_VO_WBC_Stop(int chn);
+int MEDIA_VO_WBC_GetFrame(int chn, MEDIA_BUFFER *buf, int timeout_ms);
+int MEDIA_VO_WBC_ReleaseFrame(int chn, MEDIA_BUFFER buf);
+
+// 手动发送
+int MEDIA_SYS_SendFrame(const char *dst_mod, int dst_id, const char *dst_port,
+                        MEDIA_BUFFER buf, int timeout_ms);
+
+// All Debug API
+// debug_buf由调用者提供；返回0表示完整写入，1表示被截断，-1表示参数或状态错误。
+int MEDIA_SYS_GetDebugString(char *debug_buf, size_t debug_buf_size);
+int MEDIA_SYS_debug(void);
+
+#endif // MEDIA_API_H
