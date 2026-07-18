@@ -36,6 +36,15 @@ static void fill_temperature(uint8_t *data) {
     }
 }
 
+static int load_gray8(const char *path, uint8_t *data) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    size_t read_size = fread(data, 1, IN_SIZE, fp);
+    int extra = fgetc(fp);
+    fclose(fp);
+    return read_size == IN_SIZE && extra == EOF ? 0 : -1;
+}
+
 static int dump_buffer(const char *path, MEDIA_BUFFER buffer, size_t size) {
     if (MEDIA_POOL_BeginCpuAccess(buffer, DMA_BUF_SYNC_READ) != 0) return -1;
     const void *data = MEDIA_POOL_GetVaddr(buffer);
@@ -63,6 +72,8 @@ int main(int argc, char **argv) {
         {"blue_red", MEDIA_THERMAL_COLOR_BLUE_RED},
     };
     const char *outdir = argc > 1 ? argv[1] : "outputs";
+    const char *input_path = argc > 2 ? argv[2] : NULL;
+    const char *case_name = argc > 3 ? argv[3] : "sample";
     const char *license = getenv("LIBMEDIA_LICENSE_PATH");
     MEDIA_THERMAL_ATTR attr = {0};
     MEDIA_BUFFER input = {.pool_id = -1, .index = -1};
@@ -89,16 +100,24 @@ int main(int argc, char **argv) {
         MEDIA_POOL_EndCpuAccess(input, DMA_BUF_SYNC_WRITE);
         goto cleanup_input;
     }
-    fill_temperature(data);
+    if (input_path) {
+        if (load_gray8(input_path, data) != 0) {
+            fprintf(stderr, "ERROR load exact 640x480 GRAY8 input: %s\n", input_path);
+            MEDIA_POOL_EndCpuAccess(input, DMA_BUF_SYNC_WRITE);
+            goto cleanup_input;
+        }
+    } else {
+        fill_temperature(data);
+    }
     MEDIA_POOL_EndCpuAccess(input, DMA_BUF_SYNC_WRITE);
-    snprintf(path, sizeof(path), "%s/temperature_gray8_%dx%d.raw", outdir, WIDTH, HEIGHT);
+    snprintf(path, sizeof(path), "%s/%s_gray8_%dx%d.raw", outdir, case_name, WIDTH, HEIGHT);
     if (dump_buffer(path, input, IN_SIZE) != 0) goto cleanup_input;
 
     for (size_t i = 0; i < sizeof(palettes) / sizeof(palettes[0]); ++i) {
         MEDIA_BUFFER output = {.pool_id = -1, .index = -1};
         if (MEDIA_THERMAL_SetColorMode(GRP, palettes[i].mode) != 0 ||
             MEDIA_THERMAL_Process(GRP, input, &output) != 0) goto cleanup_input;
-        snprintf(path, sizeof(path), "%s/%s_nv12_%dx%d.raw", outdir, palettes[i].name, WIDTH, HEIGHT);
+        snprintf(path, sizeof(path), "%s/%s_%s_nv12_%dx%d.raw", outdir, case_name, palettes[i].name, WIDTH, HEIGHT);
         if (dump_buffer(path, output, OUT_SIZE) != 0) {
             MEDIA_POOL_PutBuffer(output);
             goto cleanup_input;
